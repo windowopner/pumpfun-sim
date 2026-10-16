@@ -1,8 +1,12 @@
 # pumpfun-sim
 
+[![tests](https://github.com/windowopner/pumpfun-sim/actions/workflows/tests.yml/badge.svg)](https://github.com/windowopner/pumpfun-sim/actions/workflows/tests.yml)
+
 Paper-trading research on [Pump.fun](https://pump.fun), the Solana memecoin launchpad: a live on-chain event collector, a bonding-curve model that reproduces every recorded trade to the lamport, a backtest engine with realistic latency and costs, and a dashboard to look at all of it.
 
 > **Unofficial and for learning only.** Not affiliated with Pump.fun. Nothing here places real trades or touches a wallet or private key: it only reads public on-chain data and simulates. Not financial advice. The strategies included lose money, and that is one of the findings.
+
+![A backtest in the dashboard: buying every launch against a random-entry baseline, with cumulative PnL, exit reasons, costs and the return distribution](docs/images/simulation.png)
 
 ## What it does
 
@@ -14,6 +18,16 @@ Paper-trading research on [Pump.fun](https://pump.fun), the Solana memecoin laun
 | **Engine** | Fills a strategy's orders on the true curve state at the landing slot: observation delay, landing latency, slippage failures, network and priority fees, token-account rent, and a forced exit into the PumpSwap pool on graduation. |
 | **Dashboard** | Streamlit app: collector health and gaps, coin explorer with price history, simulation runner with baseline comparison and per-trade charts, and a live map of the code. English, with a Korean option. |
 
+## Dashboard
+
+Every coin's life, trade by trade, in on-chain order (here, a coin that ran to 13× and collapsed within five minutes):
+
+![Price history of one coin: every trade as a dot sized by SOL, buys and sells coloured](docs/images/coin.png)
+
+And every simulated trade, with the fills drawn on the real curve and their fees and costs to the lamport:
+
+![One simulated round trip: the curve price around it, our buy and sell, and the fill table](docs/images/trade.png)
+
 ## Quick start
 
 Python 3.9 or newer.
@@ -24,7 +38,7 @@ cd pumpfun-sim
 python3 -m venv .venv && source .venv/bin/activate
 pip install --upgrade pip && pip install -e .
 
-pumpfun demo          # dashboard on the bundled one-hour sample, no setup needed
+pumpfun demo          # dashboard on the bundled half-hour sample, no setup needed
 ```
 
 With your own data:
@@ -58,17 +72,17 @@ Full design, rules and measurements: [docs/sim-design.md](docs/sim-design.md). P
 
 ## What the data says
 
-About 7 hours of mainnet data, 4,934 coins, 0.1 SOL per entry, exit at +100% / −50% / 10 minutes:
+About 22 hours of mainnet data, 20,809 coins, 0.1 SOL per entry, exit at +100% / −50% / 10 minutes:
 
 | Strategy | Entered | Win rate | Median return | PnL (SOL) | PnL before costs | Profit factor |
 | --- | --- | --- | --- | --- | --- | --- |
-| `launch_sniper` (buy on creation) | 3,620 | 5.7% | −4.1% | −19.86 | −6.68 | 0.35 |
-| `random_baseline` (random entry time) | 4,859 | 3.7% | −4.1% | −28.07 | −11.27 | 0.22 |
+| `launch_sniper` (buy on creation) | 14,568 | 4.1% | −4.5% | −97.31 | −44.01 | 0.30 |
+| `random_baseline` (random entry time) | 20,400 | 2.6% | −4.1% | −114.91 | −44.43 | 0.18 |
 
-- Both lose money even before fees: the median coin goes down over ten minutes.
-- 27% of launch entries fail: bots buying in the same block as the coin's creation move the price past 15% slippage before a follow-up order lands.
+- Both lose money even before fees: the median coin goes down over ten minutes. Before costs, buying at launch is no better than buying at a random time.
+- 30% of launch entries fail: bots buying in the same block as the coin's creation move the price past 15% slippage before a follow-up order lands.
 - Of coins that graduate, most do it in the same slot they are created (the creator buys the whole curve), so they cannot be entered at all.
-- Latency (1+1 to 3+5 slots) changes the result little; size changes it a lot, because a bigger order moves the curve against itself.
+- Latency (1+1 to 3+5 slots) changes the result little; size changes it a lot. Ten times the size loses about twenty times as much before costs, because a bigger order moves the curve against itself.
 
 ## Writing a strategy
 
@@ -95,7 +109,7 @@ pumpfun/
   sim/                   market model, replay, engine, report, runner, strategies/
   dashboard/             Streamlit app (i18n.py + ko.py: English UI with Korean)
   sample.py              build / unpack the bundled sample
-  samples/               one hour of real data (7.6 MB gzip)
+  samples/               half an hour of real data (7.6 MB gzip)
 tests/                   50 tests, real mainnet transactions as fixtures
 docs/                    design notes and protocol notes
 ```

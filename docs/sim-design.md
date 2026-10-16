@@ -221,15 +221,17 @@ Outputs go to `sim_runs` / `sim_fills` tables (or `data/sims/<run_id>.json`):
 
 ## 12. First runs (2026-10-16, for learning only)
 
-Data: about 7 hours of collection, 4,934 coins usable (SOL-paired, non-mayhem, covered for at least 20 minutes after creation). Size 0.1 SOL, 15% slippage, take profit +100% / stop loss −50% / 10-minute time stop, d=2 / L=2.
+Data: about 22 hours of collection (2026-10-15 10:00 to 2026-10-16 08:40 UTC), 20,809 coins usable (SOL-paired, non-mayhem, covered for at least 20 minutes after creation). Size 0.1 SOL, 15% slippage, take profit +100% / stop loss −50% / 10-minute time stop (2,776 slots at the measured 0.216 s), d=2 / L=2.
 
 | | Entered | Win | Median | Mean | PnL (SOL) | Before costs | PF | Tx failures |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `launch_sniper` | 3,620 | 5.7% | −4.1% | −5.2% | −19.86 | −6.68 | 0.35 | 15.4% |
-| `random_baseline` | 4,859 | 3.7% | −4.1% | −5.7% | −28.07 | −11.27 | 0.22 | 0.6% |
+| `launch_sniper` | 14,568 | 4.1% | −4.5% | −6.4% | −97.31 | −44.01 | 0.30 | 17.7% |
+| `random_baseline` | 20,400 | 2.6% | −4.1% | −5.6% | −114.91 | −44.43 | 0.18 | 0.3% |
 
 - Both lose money, and lose even before costs. Holding the median coin for 10 minutes makes its price go down.
-- Entering at launch loses less than entering at a random time, but that's no edge (PF 0.35).
-- **27% of launch entries fail** (slippage from same-slot sniper bots), while the random baseline almost never fails. Cost is the network fees on failed transactions.
-- Sensitivity (second half of the coins, test period): within latency (1,1)→(3,5), PnL only gets slightly worse (−9.0 → −11.1 SOL at 0.1 SOL). **Size has a big effect**: at 0.5 SOL the pre-cost loss is about 14× the 0.05 SOL loss (−34.6 vs −2.5 SOL), because our own price impact grows.
+- Entering at launch loses less in total than entering at a random time, but only because fewer entries succeed; before costs the two lose the same (−44.0 vs −44.4 SOL). No edge (PF 0.30).
+- **30% of launch entries fail** (6,241 of 20,809; slippage from same-slot sniper bots), while the random baseline almost never fails. Cost is the network fees on failed transactions.
+- Sensitivity (all coins): within latency (1,1)→(3,5), PnL only gets slightly worse (−95.7 → −103.7 SOL at 0.1 SOL). **Size has a big effect**: at 0.5 SOL the pre-cost loss is about 20× the 0.05 SOL loss (−392.8 vs −19.8 SOL at d=2/L=2) for 10× the money, because our own price impact grows.
 - These numbers mean the simulator works and the simple rules don't. For the next strategies (`momentum`, `near_grad`), tune on `--period tune` and judge on `--period test`.
+
+An earlier version of this section used about 7 hours of data with time converted at a fixed 0.4 s per slot, so its "10-minute" stop was really about 5.4 minutes. The conclusions held after the correction; the numbers above replace it.
