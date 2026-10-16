@@ -8,13 +8,14 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from common import LAUNCH_PRICE, slot_to_time
-from data_view import coin_history
-from run_sim import SIMS_DIR, SLOTS_PER_MINUTE, make_strategy, run_record, save_record, select_coins, since_slot
-from sim.engine import LAMPORTS_PER_SOL, EngineConfig, run
-from sim.replay import load_universe
-from sim.report import round_trip_record, summarize
-from sim.strategies import STRATEGIES
+from pumpfun.dashboard.common import LAUNCH_PRICE, slot_to_time
+from pumpfun.dashboard.data_view import coin_history
+from pumpfun.paths import sims_dir
+from pumpfun.sim.runner import SLOTS_PER_MINUTE, make_strategy, run_record, save_record, select_coins, since_slot
+from pumpfun.sim.engine import LAMPORTS_PER_SOL, EngineConfig, run
+from pumpfun.sim.replay import load_universe
+from pumpfun.sim.report import round_trip_record, summarize
+from pumpfun.sim.strategies import STRATEGIES
 
 STRATEGY_LABELS = {"launch_sniper": "launch_sniper · 생성 즉시 매수",
                    "random_baseline": "random_baseline · 무작위 시점 매수 (비교 기준)"}
@@ -98,9 +99,9 @@ def render_run_form(db_path: str):
 
 
 def render_saved_picker():
-    files = sorted(SIMS_DIR.glob("*.json"), reverse=True)
+    files = sorted(sims_dir().glob("*.json"), reverse=True)
     if not files:
-        st.info("저장된 결과가 없어요. '새로 실행'에서 '결과 저장'을 켜거나 `run_sim.py --save`로 만들 수 있어요.")
+        st.info("저장된 결과가 없어요. '새로 실행'에서 '결과 저장'을 켜거나 `pumpfun sim --save`로 만들 수 있어요.")
         return None
     path = st.selectbox("저장된 실행", files, format_func=lambda p: p.stem.replace("_", " · ", 1))
     return load_saved(str(path), path.stat().st_mtime)

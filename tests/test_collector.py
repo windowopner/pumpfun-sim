@@ -12,9 +12,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pumpfun.idl_decoder import IdlEventDecoder
-from pumpfun.logs import program_data
-from pumpfun.store import EventStore
+from pumpfun.collect.idl_decoder import IdlEventDecoder
+from pumpfun.paths import IDL_PATH
+from pumpfun.collect.logs import program_data
+from pumpfun.collect.store import EventStore
 
 ROOT = Path(__file__).resolve().parent.parent
 FIXTURES = ROOT / "tests" / "fixtures"
@@ -33,7 +34,7 @@ def ceil_div(a, b):
 class DecodeRealTransactions(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.decoder = IdlEventDecoder.from_file(ROOT / "idl" / "pump.json")
+        cls.decoder = IdlEventDecoder.from_file(IDL_PATH)
 
     def events(self, fixture):
         tx = load(fixture)

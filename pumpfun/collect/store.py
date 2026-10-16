@@ -141,6 +141,23 @@ def _sql_value(v: Any) -> Any:
     return v
 
 
+def connect_readonly(path, **kwargs) -> sqlite3.Connection:
+    """
+    A connection that never writes. SQLite's read-only mode cannot open a WAL
+    database whose writer has exited (its -shm file is gone and read-only mode may
+    not create one), so that case falls back to a normal connection set to
+    `query_only`.
+    """
+    try:
+        db = sqlite3.connect(f"file:{path}?mode=ro", uri=True, **kwargs)
+        db.execute("SELECT 1 FROM sqlite_master LIMIT 1")
+        return db
+    except sqlite3.OperationalError:
+        db = sqlite3.connect(str(path), **kwargs)
+        db.execute("PRAGMA query_only = ON")
+        return db
+
+
 class EventStore:
     """
     Usage:

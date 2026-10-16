@@ -8,11 +8,11 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from common import (
+from pumpfun.dashboard.common import (
     LAUNCH_PRICE, ZERO_PUBKEY, ago, coin_kind, connect, query, slot_to_time, unix_to_local,
 )
-from sim.market import CurveState
-from sim.replay import PHANTOM_SIGNATURE, ChainError, order_by_reserve_chain
+from pumpfun.sim.market import CurveState
+from pumpfun.sim.replay import PHANTOM_SIGNATURE, ChainError, order_by_reserve_chain
 
 
 @st.cache_data(ttl=15, show_spinner=False)
@@ -26,6 +26,7 @@ def headline(db_path: str) -> dict:
             "graduated": db.execute("SELECT count(*) FROM lifecycle WHERE event = 'CompleteEvent'").fetchone()[0],
             "last_received": last_received[0] if last_received else None,
             "db_bytes": sum(os.path.getsize(p) for p in (db_path, db_path + "-wal") if os.path.exists(p)),
+            "is_sample": db.execute("SELECT count(*) = 1 AND max(reason) = 'sample' FROM connections").fetchone()[0],
         }
 
 
@@ -111,10 +112,14 @@ def render(db_path: str):
     cols[2].metric("졸업", f"{h['graduated']:,}")
     if h["last_received"]:
         lag = time.time() - h["last_received"]
-        cols[3].metric("마지막 수신", ago(lag))
-    cols[4].metric("DB 크기", f"{h['db_bytes'] / 1e9:.1f}GB")
-    if h["last_received"] and time.time() - h["last_received"] > 120:
-        st.warning("2분 넘게 새 거래가 들어오지 않았어요. 수집기(collector.py)가 멈췄는지 확인해 보세요.")
+        cols[3].metric("마지막 수신", "샘플" if h["is_sample"] else ago(lag))
+    size = h["db_bytes"]
+    cols[4].metric("DB 크기", f"{size / 1e9:.1f}GB" if size >= 1e9 else f"{size / 1e6:.0f}MB")
+    if h["is_sample"]:
+        st.info("번들 샘플 데이터를 보고 있어요: 실제 메인넷 1시간 분량, 시뮬레이션에 쓰는 SOL 페어 코인만 담겨 있어요. "
+                "직접 모으려면 `pumpfun collect`, 모은 데이터를 보려면 `pumpfun dashboard`.")
+    elif h["last_received"] and time.time() - h["last_received"] > 120:
+        st.warning("2분 넘게 새 거래가 들어오지 않았어요. 수집기(`pumpfun collect`)가 멈췄는지 확인해 보세요.")
 
     render_coverage(db_path)
     render_activity(db_path)

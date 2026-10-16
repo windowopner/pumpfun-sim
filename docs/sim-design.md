@@ -36,7 +36,7 @@ A coin enters the simulation only if all of these hold:
 4. The create falls inside a covered slot range (`first_slot`..`last_slot`) in the `connections` table. **The coin's observation stops at the end of that range** (`observed_until`); later trades are dropped, because some may have been missed while the collector wasn't listening. Excluding these coins would lose too many, since most coins stop trading within a few minutes. A position still open when observation ends is closed at the last state we saw and counted separately (section 8).
 5. Rows whose signature is `111…1` (phantom notifications) are excluded.
 
-Implemented in `sim/replay.py` `load_universe()`. On 2026-10-15 data: 941 of 2,123 seen coins are in the universe; the rest are mayhem (797) or not SOL-paired (383). **No coin was excluded because ordering failed.**
+Implemented in `pumpfun/sim/replay.py` `load_universe()`. On 2026-10-15 data: 941 of 2,123 seen coins are in the universe; the rest are mayhem (797) or not SOL-paired (383). **No coin was excluded because ordering failed.**
 
 The excluded count and reasons go in every run report. A big jump in exclusions is a sign of a protocol change.
 
@@ -58,7 +58,7 @@ Starting from the `CreateEvent` reserves, we repeatedly pick the one trade whose
 
 ## 4. Market model (bonding curve)
 
-`sim/market.py` (implemented). Integer (lamport / token base unit) arithmetic only. **The formulas follow what the program actually records, not the SDK.** The SDK's exact-SOL quote formula matched the token count in only 5 of 18 real transactions.
+`pumpfun/sim/market.py` (implemented). Integer (lamport / token base unit) arithmetic only. **The formulas follow what the program actually records, not the SDK.** The SDK's exact-SOL quote formula matched the token count in only 5 of 18 real transactions.
 
 ```text
 buy, exact tokens:  cost   = floor(amount * vQ / (vT - amount)) + 1
@@ -142,11 +142,11 @@ event lands in slot s ──(observe_delay)──► strategy decides at s+d ─
 - Graduation is rare, so v1 is fine for most strategies. Section 10 checks how rare.
 - If a coin graduated but its migration is outside the collected data, it's valued at the last curve state with the PumpSwap fees and the haircut applied (`data_end (graduated)`).
 
-Implemented in `sim/engine.py` (`fill_pool_sell`). PumpSwap sell: `gross = floor(Q' × tokens / (B + tokens))`, where `Q' = opening quote reserves × (1 − haircut)`; fees are rounded up per tier (LP 2 / protocol 93 / creator 30 bps). Strategy sell orders sent after completion fail, but the engine's graduation exit happens regardless.
+Implemented in `pumpfun/sim/engine.py` (`fill_pool_sell`). PumpSwap sell: `gross = floor(Q' × tokens / (B + tokens))`, where `Q' = opening quote reserves × (1 − haircut)`; fees are rounded up per tier (LP 2 / protocol 93 / creator 30 bps). Strategy sell orders sent after completion fail, but the engine's graduation exit happens regardless.
 
 ## 7. Strategy interface
 
-`sim/strategies/*.py`. A strategy can only see the state as of its observation point and can only return orders.
+`pumpfun/sim/strategies/*.py`. A strategy can only see the state as of its observation point and can only return orders.
 
 ```python
 class Strategy:
@@ -159,7 +159,7 @@ class Strategy:
 - `Order`: `Buy(sol=0.1, slippage_bps=1500)`, `Sell(fraction=1.0, slippage_bps=1500)`.
 - `ctx.slot` is the observation slot. The engine applies latency and fills afterwards.
 
-Implemented (`sim/engine.py`):
+Implemented (`pumpfun/sim/engine.py`):
 
 - `Strategy` hooks: `on_create(coin, ctx)`, `on_trade(coin, trade, pos, ctx)`, `on_complete(coin, pos, ctx)`, plus `on_tick(coin, pos, ctx)` and `on_fill(fill, pos, ctx)`. **A dead coin produces no events, so time stops need ticks:** while a coin has a position or orders in flight, `on_tick` is called every `tick_slots` (default 25, ~10 seconds).
 - Orders: `Buy(quote=lamports, slippage_bps=1500)`, `Sell(fraction=1.0, slippage_bps=1500)`, each with a `reason` (shown as the exit reason). `ctx.pending_orders(mint)` helps avoid sending duplicates.
@@ -179,7 +179,7 @@ Plus a **random-entry baseline** (same size and exit rules, entering at a random
 ## 8. Engine and outputs
 
 ```
-run_sim.py --strategy launch_sniper --from 2026-10-15 --to ... --observe-delay 2 --land 2 --size 0.1
+pumpfun sim --strategy launch_sniper --hours 6 --observe-delay 2 --land 2 --size 0.1
 ```
 
 1. Build the universe (section 2) and order events (section 3).
@@ -212,10 +212,10 @@ Outputs go to `sim_runs` / `sim_fills` tables (or `data/sims/<run_id>.json`):
 
 ## 11. Build order
 
-1. ~~`sim/market.py` + tests (every recorded trade must reproduce exactly)~~ done
-2. ~~`sim/replay.py`: universe, ordering, observation timing~~ done (`load_universe`, `order_by_reserve_chain`, `observations`, `CoinHistory.state_at`)
-3. ~~`sim/engine.py`: latency, slippage, failures, costs, forced exit at graduation~~ done
-4. ~~`launch_sniper` + random baseline, `run_sim.py`, summary report~~ done (`sim/strategies/`, `sim/report.py`, `run_sim.py`)
+1. ~~`pumpfun/sim/market.py` + tests (every recorded trade must reproduce exactly)~~ done
+2. ~~`pumpfun/sim/replay.py`: universe, ordering, observation timing~~ done (`load_universe`, `order_by_reserve_chain`, `observations`, `CoinHistory.state_at`)
+3. ~~`pumpfun/sim/engine.py`: latency, slippage, failures, costs, forced exit at graduation~~ done
+4. ~~`launch_sniper` + random baseline, `pumpfun sim`, summary report~~ done (`pumpfun/sim/strategies/`, `pumpfun/sim/report.py`, `pumpfun/sim/runner.py`)
 5. Sensitivity table, the other strategies
 6. (v2) PumpSwap collection, shadow-curve mode
 

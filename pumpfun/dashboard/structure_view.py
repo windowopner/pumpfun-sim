@@ -10,23 +10,26 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from common import ROOT, connect
+from pumpfun.dashboard.common import ROOT, connect
+from pumpfun.paths import PACKAGE_DIR
 
 # (layer, path, one-line role in Korean). Order = how data flows.
 MODULES = [
-    ("수집", "collector.py", "웹소켓 구독, 재연결, 통계 출력. 계속 돌아가는 프로그램"),
-    ("수집", "pumpfun/logs.py", "트랜잭션 로그에서 Pump가 직접 낸 이벤트 데이터만 골라냄"),
-    ("수집", "pumpfun/idl_decoder.py", "공식 IDL로 이벤트 바이트를 필드로 디코딩"),
-    ("수집", "pumpfun/store.py", "SQLite 테이블 정의와 저장"),
-    ("시뮬레이션", "sim/market.py", "본딩커브 수식: 이 상태에서 사고팔면 얼마인가"),
-    ("시뮬레이션", "sim/replay.py", "쓸 코인 고르기, 거래 순서 복원, 전략이 언제 무엇을 보는지"),
-    ("시뮬레이션", "sim/engine.py", "주문을 지연·실패·비용까지 반영해 체결"),
-    ("시뮬레이션", "sim/strategies/common.py", "공통 청산 규칙 (익절/손절/시간 손절)"),
-    ("시뮬레이션", "sim/strategies/launch_sniper.py", "생성 즉시 매수 전략"),
-    ("시뮬레이션", "sim/strategies/random_baseline.py", "무작위 시점 매수 (비교 기준)"),
-    ("시뮬레이션", "sim/report.py", "결과 요약 통계"),
-    ("실행", "run_sim.py", "시뮬레이션 CLI"),
-    ("실행", "dashboard/app.py", "이 대시보드"),
+    ("실행", "pumpfun/cli.py", "`pumpfun` 명령어: collect · sim · dashboard · demo · sample"),
+    ("수집", "pumpfun/collect/collector.py", "웹소켓 구독, 재연결, 통계 출력. 계속 돌아가는 프로그램"),
+    ("수집", "pumpfun/collect/logs.py", "트랜잭션 로그에서 Pump가 직접 낸 이벤트 데이터만 골라냄"),
+    ("수집", "pumpfun/collect/idl_decoder.py", "공식 IDL로 이벤트 바이트를 필드로 디코딩"),
+    ("수집", "pumpfun/collect/store.py", "SQLite 테이블 정의와 저장"),
+    ("시뮬레이션", "pumpfun/sim/market.py", "본딩커브 수식: 이 상태에서 사고팔면 얼마인가"),
+    ("시뮬레이션", "pumpfun/sim/replay.py", "쓸 코인 고르기, 거래 순서 복원, 전략이 언제 무엇을 보는지"),
+    ("시뮬레이션", "pumpfun/sim/engine.py", "주문을 지연·실패·비용까지 반영해 체결"),
+    ("시뮬레이션", "pumpfun/sim/strategies/common.py", "공통 청산 규칙 (익절/손절/시간 손절)"),
+    ("시뮬레이션", "pumpfun/sim/strategies/launch_sniper.py", "생성 즉시 매수 전략"),
+    ("시뮬레이션", "pumpfun/sim/strategies/random_baseline.py", "무작위 시점 매수 (비교 기준)"),
+    ("시뮬레이션", "pumpfun/sim/report.py", "결과 요약 통계"),
+    ("실행", "pumpfun/sim/runner.py", "`pumpfun sim`: 코인 선택, 실행, 요약 출력, 결과 저장"),
+    ("실행", "pumpfun/sample.py", "번들 샘플 데이터 만들기와 풀기"),
+    ("실행", "pumpfun/dashboard/app.py", "이 대시보드"),
 ]
 
 FLOW = """
@@ -38,13 +41,13 @@ digraph {
   edge [color="#888", fontname="Helvetica", fontsize=10, fontcolor="#999"];
   rpc [label="Solana RPC\\n(logsSubscribe)", shape=ellipse, fillcolor="#e8f0fe"];
   subgraph cluster_collect { label="수집"; style=dashed; color="#aaa";
-    collector [label="collector.py"]; logs [label="pumpfun/logs.py"];
-    decoder [label="pumpfun/idl_decoder.py"]; store [label="pumpfun/store.py"]; }
-  idl [label="idl/pump.json", shape=note, fillcolor="#fff8e1"];
+    collector [label="collect/collector.py"]; logs [label="collect/logs.py"];
+    decoder [label="collect/idl_decoder.py"]; store [label="collect/store.py"]; }
+  idl [label="collect/idl/pump.json", shape=note, fillcolor="#fff8e1"];
   db [label="data/pump.db\\ncoins · trades\\nlifecycle · connections", shape=cylinder, fillcolor="#fff3e0"];
   subgraph cluster_sim { label="시뮬레이션"; style=dashed; color="#aaa";
-    replay [label="sim/replay.py"]; market [label="sim/market.py"]; engine [label="sim/engine.py"];
-    strategies [label="sim/strategies/*"]; report [label="sim/report.py"]; }
+    replay [label="pumpfun/sim/replay.py"]; market [label="pumpfun/sim/market.py"]; engine [label="pumpfun/sim/engine.py"];
+    strategies [label="pumpfun/sim/strategies/*"]; report [label="pumpfun/sim/report.py"]; }
   runsim [label="run_sim.py", fillcolor="#e8f5e9"]; dash [label="dashboard/app.py", fillcolor="#e8f5e9"];
   sims [label="data/sims/*.json", shape=note, fillcolor="#fff3e0"];
   rpc -> collector [label="로그"]; collector -> logs -> decoder -> store; idl -> decoder; store -> db;
@@ -99,13 +102,13 @@ def render(db_path: str):
     st.markdown("데이터는 위에서 아래로 흘러요. 수집과 시뮬레이션은 `data/pump.db` 파일 하나로만 이어져 있어요.")
     st.graphviz_chart(FLOW, width="stretch")
     st.markdown("**의존 방향** — 아래 계층은 위 계층을 몰라요: "
-                "`market` ← `replay` ← `engine` ← `strategies`, `report` ← `run_sim`, `dashboard`")
+                "`market` ← `replay` ← `engine` ← `strategies`, `report` ← `runner`, `dashboard` ← `cli`")
 
     st.subheader("파일별 역할")
     st.caption("설명과 함수 목록은 소스 코드의 docstring에서 바로 읽어와요. 코드를 고치면 여기도 따라 바뀌어요.")
     layer = None
     for group, rel, role in MODULES:
-        path = ROOT / rel
+        path = PACKAGE_DIR.parent / rel   # works from a checkout and from site-packages
         if not path.exists():
             continue
         if group != layer:
@@ -131,6 +134,9 @@ def render(db_path: str):
     for f in test_files:
         for t in test_outline(str(f), f.stat().st_mtime):
             rows.append({"파일": f.name, **t})
+    if not rows:
+        st.caption("테스트는 소스 저장소에 있어요 (설치된 패키지에는 포함되지 않음).")
+        return
     st.caption(f"{len(rows)}개 · 실행: `python3 -m unittest discover tests`")
     st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch", height=300)
 

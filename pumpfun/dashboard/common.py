@@ -1,7 +1,7 @@
 """Shared helpers for the dashboard: read-only database access, slot <-> time, formatting."""
 
+import os
 import sqlite3
-import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -9,13 +9,13 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-ROOT = Path(__file__).resolve().parent.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+from pumpfun.collect.store import connect_readonly
+from pumpfun.paths import PACKAGE_DIR, default_db
+from pumpfun.sim.market import INITIAL_VIRTUAL_QUOTE_RESERVES, INITIAL_VIRTUAL_TOKEN_RESERVES, ZERO_PUBKEY
 
-from sim.market import INITIAL_VIRTUAL_QUOTE_RESERVES, INITIAL_VIRTUAL_TOKEN_RESERVES, ZERO_PUBKEY  # noqa: E402
-
-DEFAULT_DB = ROOT / "data" / "pump.db"
+# The source checkout (docs/, tests/) when running from one; the package itself when installed.
+ROOT = PACKAGE_DIR.parent if (PACKAGE_DIR.parent / "pyproject.toml").exists() else PACKAGE_DIR
+DEFAULT_DB = Path(os.environ.get("PUMPFUN_DB") or default_db())
 LAUNCH_PRICE = INITIAL_VIRTUAL_QUOTE_RESERVES / INITIAL_VIRTUAL_TOKEN_RESERVES   # lamports per token unit
 SECONDS_PER_SLOT = 0.4
 LOCAL_TZ = datetime.now().astimezone().tzinfo
@@ -23,7 +23,7 @@ LOCAL_TZ = datetime.now().astimezone().tzinfo
 
 def connect(db_path: str) -> sqlite3.Connection:
     """Read-only, so the dashboard never blocks the running collector."""
-    return sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, check_same_thread=False)
+    return connect_readonly(db_path, check_same_thread=False)
 
 
 def query(db_path: str, sql: str, params=()) -> pd.DataFrame:

@@ -10,7 +10,7 @@ two runs with different engine settings enter the same coins at the same times.
 import hashlib
 import random
 
-from sim.strategies.common import TimedExit
+from pumpfun.sim.strategies.common import TimedExit
 
 
 class RandomBaseline(TimedExit):

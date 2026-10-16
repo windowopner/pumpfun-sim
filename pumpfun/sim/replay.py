@@ -32,7 +32,8 @@ import sqlite3
 from dataclasses import dataclass, field
 from typing import Counter, Dict, Iterator, List, Optional, Tuple
 
-from sim.market import ZERO_PUBKEY, CurveState, FeeRates
+from pumpfun.collect.store import connect_readonly
+from pumpfun.sim.market import ZERO_PUBKEY, CurveState, FeeRates
 
 PHANTOM_SIGNATURE = "1" * 64     # RPC notifications for trades that never landed
 PROTOCOL_FEE_BPS = 95            # on-chain FeeConfig for bonding curves, 2026-10-15
@@ -184,7 +185,7 @@ def first_trade_rowid(db: sqlite3.Connection, slot: int) -> int:
 
 
 def latest_slot(db_path) -> Optional[int]:
-    with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as db:
+    with connect_readonly(db_path) as db:
         return db.execute("SELECT max(slot) FROM coins").fetchone()[0]
 
 
@@ -194,7 +195,7 @@ def load_universe(db_path, since_slot: Optional[int] = None) -> Universe:
     Only the trades of coins that can be simulated are turned into Python objects;
     the rest of the scan is just counted, which keeps memory and time down.
     """
-    db = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    db = connect_readonly(db_path)
     db.row_factory = sqlite3.Row
     ranges = sorted((a, b) for a, b in db.execute(
         "SELECT first_slot, last_slot FROM connections WHERE first_slot IS NOT NULL AND last_slot IS NOT NULL"))

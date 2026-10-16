@@ -10,11 +10,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from sim.engine import (
+from pumpfun.sim.engine import (
     TOKEN_ACCOUNT_RENT, VOLUME_ACCUMULATOR_RENT, Buy, EngineConfig, Sell, Strategy, run,
 )
-from sim.market import BPS, ZERO_PUBKEY, FeeRates, buy_exact_quote_in, buy_exact_tokens, ceil_div, sell
-from sim.replay import load_universe
+from pumpfun.sim.market import BPS, ZERO_PUBKEY, FeeRates, buy_exact_quote_in, buy_exact_tokens, ceil_div, sell
+from pumpfun.sim.replay import load_universe
 from tests.test_replay import FakeChain
 
 SOL = 1_000_000_000

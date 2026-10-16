@@ -15,7 +15,7 @@ import statistics
 from collections import Counter
 from typing import List, Optional, Tuple
 
-from sim.engine import LAMPORTS_PER_SOL, EngineResult, RoundTrip
+from pumpfun.sim.engine import LAMPORTS_PER_SOL, EngineResult, RoundTrip
 
 
 def _sol(lamports: float) -> float:

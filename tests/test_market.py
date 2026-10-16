@@ -1,12 +1,12 @@
 """
 Market model tests.
 
-The fixture tests run anywhere. `ReproduceRecordedTrades` replays every trade
-the collector has saved (data/pump.db, or the file in $PUMP_DB) and is skipped
-when there is no database.
+The fixture tests use single real transactions. `ReproduceRecordedTrades`
+replays every trade in a collected database: the bundled one-hour sample by
+default, or your own with $PUMP_DB.
 
     python3 -m unittest discover tests
-    PUMP_DB=/path/to/pump.db python3 -m unittest tests.test_market -v
+    PUMP_DB=data/pump.db python3 -m unittest tests.test_market -v
 """
 
 import collections
@@ -17,17 +17,20 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from sim.market import (
+from pumpfun.sim.market import (
     EXACT_QUOTE_IN, INTENT_BY_IX, INITIAL_REAL_TOKEN_RESERVES, INITIAL_VIRTUAL_QUOTE_RESERVES, INITIAL_VIRTUAL_TOKEN_RESERVES,
     ZERO_PUBKEY, CurveError, CurveState, FeeRates, buy_exact_quote_in, buy_exact_tokens,
     ceil_div, replay_trade, sell,
 )
-from pumpfun.idl_decoder import IdlEventDecoder
-from pumpfun.logs import program_data
+from pumpfun.collect.idl_decoder import IdlEventDecoder
+from pumpfun.collect.store import connect_readonly
+from pumpfun.paths import IDL_PATH
+from pumpfun.collect.logs import program_data
+from tests.data_source import test_db
 
 ROOT = Path(__file__).resolve().parent.parent
 FIXTURES = ROOT / "tests" / "fixtures"
-DB_PATH = Path(os.environ.get("PUMP_DB", ROOT / "data" / "pump.db"))
+DB_PATH = test_db()
 
 # On a SOL-paired curve, virtual minus real reserves never changes.
 TOKEN_OFFSET = INITIAL_VIRTUAL_TOKEN_RESERVES - INITIAL_REAL_TOKEN_RESERVES
@@ -40,7 +43,7 @@ def sol_curve(virtual_token_reserves, virtual_quote_reserves):
 
 
 def fixture_events(name):
-    decoder = IdlEventDecoder.from_file(ROOT / "idl" / "pump.json")
+    decoder = IdlEventDecoder.from_file(IDL_PATH)
     tx = json.loads((FIXTURES / name).read_text())
     return [decoder.decode(p).fields for p in program_data(tx["logs"], decoder.address)]
 
@@ -197,7 +200,7 @@ class ReproduceRecordedTrades(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.db = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
+        cls.db = connect_readonly(DB_PATH)
 
     def test_every_trade_from_its_own_pre_state(self):
         rows = in_universe_rows(self.db)

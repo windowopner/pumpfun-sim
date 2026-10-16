@@ -1,7 +1,7 @@
 """
 Replay tests. Most build a small collector database with the market model, so
 every condition (same-slot trades, gaps, phantoms, broken chains) is set up on
-purpose. `RealDatabase` runs over data/pump.db (or $PUMP_DB) when it exists.
+purpose. `RealDatabase` runs over the bundled sample, or your own database with $PUMP_DB.
 
     python3 -m unittest tests.test_replay -v
 """
@@ -13,14 +13,15 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pumpfun.store import EventStore
-from sim.market import ZERO_PUBKEY, CurveState, FeeRates, buy_exact_quote_in, buy_exact_tokens, sell
-from sim.replay import (
+from pumpfun.collect.store import EventStore
+from pumpfun.sim.market import ZERO_PUBKEY, CurveState, FeeRates, buy_exact_quote_in, buy_exact_tokens, sell
+from pumpfun.sim.replay import (
     COMPLETE, CREATE, MIGRATION, PHANTOM_SIGNATURE, TRADE, load_universe, observations,
 )
+from tests.data_source import test_db
 
 ROOT = Path(__file__).resolve().parent.parent
-DB_PATH = Path(os.environ.get("PUMP_DB", ROOT / "data" / "pump.db"))
+DB_PATH = test_db()
 USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 SOL = 1_000_000_000
 

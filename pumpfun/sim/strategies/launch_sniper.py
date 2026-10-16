@@ -1,6 +1,6 @@
 """Buy as soon as a new coin is seen; exit with the shared TimedExit rules."""
 
-from sim.strategies.common import TimedExit
+from pumpfun.sim.strategies.common import TimedExit
 
 
 class LaunchSniper(TimedExit):

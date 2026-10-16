@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pumpfun-sim"
+dynamic = ["version"]
+description = "Paper-trading research on Pump.fun: live collector, exact bonding-curve replay, backtest engine and dashboard"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Sabu" }]
+requires-python = ">=3.9"
+dependencies = [
+    "websockets>=12",
+    "streamlit>=1.50",
+    "pandas>=2.0",
+    "altair>=5.0",
+]
+keywords = ["solana", "pump.fun", "backtesting", "paper-trading", "bonding-curve"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Developers",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
+
+[project.scripts]
+pumpfun = "pumpfun.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "pumpfun.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["pumpfun*"]
+
+[tool.setuptools.package-data]
+pumpfun = ["collect/idl/*.json", "samples/*.db.gz"]

@@ -6,8 +6,8 @@ fills it has learned about).
 
 from typing import Optional
 
-from sim.engine import LAMPORTS_PER_SOL, Buy, Context, Position, Sell, Strategy
-from sim.replay import CoinView
+from pumpfun.sim.engine import LAMPORTS_PER_SOL, Buy, Context, Position, Sell, Strategy
+from pumpfun.sim.replay import CoinView
 
 
 class TimedExit(Strategy):

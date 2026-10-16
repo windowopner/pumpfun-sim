@@ -1,140 +1,118 @@
-# pumpfun
+# pumpfun-sim
 
-Pump.fun 페이퍼트레이딩 시뮬레이터를 만들기 위한 학습 프로젝트입니다. 지금 있는 건 데이터 수집기(collector)입니다.
+Paper-trading research on [Pump.fun](https://pump.fun), the Solana memecoin launchpad: a live on-chain event collector, a bonding-curve model that reproduces every recorded trade to the lamport, a backtest engine with realistic latency and costs, and a dashboard to look at all of it.
 
-- 프로토콜 정리: [docs/protocol-notes.md](docs/protocol-notes.md)
-- 시뮬레이터 설계: [docs/sim-design.md](docs/sim-design.md)
+> **Unofficial and for learning only.** Not affiliated with Pump.fun. Nothing here places real trades or touches a wallet or private key: it only reads public on-chain data and simulates. Not financial advice. The strategies included lose money, and that is one of the findings.
 
-## Dashboard
+## What it does
 
-수집 데이터, 시뮬레이션, 프로젝트 구조를 한 화면에서 봅니다.
+| Part | What it is |
+| --- | --- |
+| **Collector** | Subscribes to the Pump program's logs over a Solana RPC websocket, decodes `CreateEvent` / `TradeEvent` / graduation events with the official IDL, and stores them in SQLite. Tracks exactly which slots it covered, so gaps are known. |
+| **Market model** | Bonding-curve math in integer lamports that matches what the on-chain program records, not what the official SDK quotes. Verified against **2,309,807 of 2,309,807** recorded mainnet trades. |
+| **Replay** | Restores on-chain order inside a slot (the RPC stream does not keep it) by chaining each trade's reserves, and replays events at the moment a strategy could have seen them. |
+| **Engine** | Fills a strategy's orders on the true curve state at the landing slot: observation delay, landing latency, slippage failures, network and priority fees, token-account rent, and a forced exit into the PumpSwap pool on graduation. |
+| **Dashboard** | Streamlit app: collector health and gaps, coin explorer with price history, simulation runner with baseline comparison and per-trade charts, and a live map of the code. |
+
+## Quick start
+
+Python 3.9 or newer.
 
 ```bash
-python3 -m streamlit run dashboard/app.py
+git clone https://github.com/windowopner/pumpfun-sim.git
+cd pumpfun-sim
+python3 -m venv .venv && source .venv/bin/activate
+pip install --upgrade pip && pip install -e .
+
+pumpfun demo          # dashboard on the bundled one-hour sample, no setup needed
 ```
 
-브라우저에서 http://localhost:8501 이 열립니다. `pump.db`를 읽기 전용으로 열어서 수집기가 돌아가는 중에도 써도 됩니다.
-
-| 탭 | 내용 |
-| --- | --- |
-| 수집 데이터 | 코인·거래 수, 마지막 수신 시각, DB 크기, 수집 구간과 공백, 시간별 새 코인, 최근 코인 목록. 코인을 누르면 가격 흐름과 거래 목록 |
-| 시뮬레이션 | 폼으로 전략을 실행하거나 저장된 결과(`data/sims`)를 엽니다. 요약 지표, random baseline 비교, 누적 손익, 청산 이유, 비용, 수익률 분포. 거래를 누르면 가격 위에 진입·청산 표시 |
-| 구조 | 데이터 흐름도, 파일별 역할과 함수 목록(소스의 docstring에서 바로 읽음), DB 테이블, 테스트 목록, 문서 |
-
-시뮬레이션은 기본으로 최근 6시간 데이터만 씁니다 (약 15초). 데이터가 하루 수백만 건씩 늘어서 전체를 읽으면 오래 걸리고 메모리를 많이 씁니다.
-
-## Collector
-
-Solana RPC 웹소켓으로 Pump 프로그램(`6EF8rrec...`)의 로그를 구독하고, 공식 IDL(`idl/pump.json`)로 이벤트를 디코딩해서 SQLite에 저장합니다.
+With your own data:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python3 collector.py
+pumpfun collect                                   # record live events into data/pump.db (Ctrl-C to stop)
+pumpfun sim --strategy launch_sniper --baseline   # backtest, compared with a random-entry baseline
+pumpfun dashboard                                 # the dashboard on data/pump.db
+pumpfun --help
 ```
 
-- 기본은 공용 메인넷 RPC(`wss://api.mainnet-beta.solana.com`)입니다. 다른 RPC를 쓰려면 `SOLANA_WS_URL` 환경변수나 `--ws-url`을 지정하세요.
-- 저장 위치는 기본 `data/pump.db`이고 `--db`로 바꿀 수 있습니다.
-- `Ctrl-C`로 종료합니다. 30초마다 상태가 한 줄 출력됩니다 (`--stats-interval`). 새 코인 로그가 너무 많으면 `--quiet-coins`를 쓰세요.
+The collector uses the public mainnet RPC by default. It works, but it is rate limited and drops the connection now and then; set `SOLANA_WS_URL` to your own RPC websocket for anything long-running. Data goes to `./data`, or `$PUMPFUN_DATA`.
 
-2026-10-15에 공용 RPC로 75초 동안 돌린 결과: 새 코인 31개, 거래 2,687건, 디코딩 에러 0건. 같은 구간의 온체인 기록과 비교했을 때 코인 생성은 31/31건 모두 수집되었습니다. Pump 프로그램을 건드린 트랜잭션의 절반쯤은 실패한 트랜잭션(주로 스나이핑 봇)이라 저장하지 않습니다.
+## How it works
 
-### 테이블
-
-| 테이블 | 내용 |
-| --- | --- |
-| `coins` | `CreateEvent` 하나당 한 행 (민트, 이름, 심볼, 크리에이터, 시작 리저브, mayhem/holder rewards 여부, 원본 JSON) |
-| `trades` | `TradeEvent` 하나당 한 행 (매수/매도, 수량, **거래 직후의 리저브**, 수수료, 인스트럭션 이름) |
-| `lifecycle` | `CompleteEvent`, `PostCompleteBuyEvent`, `CompletePumpAmmMigrationEvent` (졸업, 마이그레이션) |
-| `connections` | 웹소켓 세션 기록. 끊긴 시간대는 데이터가 비어 있다는 뜻 |
-
-- 모든 이벤트는 `(signature, event_index)`로 중복 없이 저장됩니다.
-- `connections`의 `first_slot`..`last_slot`이 실제로 수집한 구간입니다 (1초마다 갱신). 이 구간 밖은 데이터가 없습니다.
-- 공용 RPC는 서명이 `111…1`인 가짜 알림을 보내기도 합니다. 지금 수집기는 버리지만, 2026-10-15 19:44 이전 데이터에는 남아 있으니 `signature != '1111…'`로 제외하세요.
-- `slot`은 블록 번호, `timestamp`는 온체인 시간(초), `received_at`은 수집기가 받은 로컬 시간입니다.
-- 금액은 전부 원시 단위입니다: SOL은 lamports(10^9), 토큰은 소수점 6자리(10^6).
-- `quote_mint`가 `11111111111111111111111111111111`이면 SOL 페어 코인입니다. 다른 값이면 USDC나 다른 pump 코인 페어이고, 이때는 `sol_amount` 대신 `quote_amount`/`virtual_quote_reserves`를 봐야 합니다.
-
-### 예시 쿼리
-
-```sql
--- 최근 새 코인
-SELECT datetime(timestamp, 'unixepoch'), symbol, name, mint FROM coins ORDER BY slot DESC LIMIT 20;
-
--- 한 코인의 가격 흐름 (SOL/토큰, 거래 직후 기준)
-SELECT slot, is_buy, sol_amount / 1e9 AS sol,
-       (virtual_sol_reserves / 1e9) / (virtual_token_reserves / 1e6) AS price_sol
-FROM trades WHERE mint = '<MINT>' ORDER BY slot, signature, event_index;
+```
+Solana RPC ──logsSubscribe──► collector ──► SQLite ──► replay ──► engine ◄──► strategy
+                                 │                       ▲          │
+                         official IDL decoder       market model    └──► report / dashboard
 ```
 
-> 같은 slot 안의 거래 순서는 이 데이터만으로는 정확히 알 수 없습니다. `logsSubscribe` 알림에는 블록 내 트랜잭션 순서가 없기 때문입니다. 리저브 값으로 순서를 추정하거나, 필요하면 나중에 `getBlock`으로 보완해야 합니다.
+A few things that turned out to matter:
 
-## Simulator (in progress)
+- **The program, not the SDK, is the reference.** For SOL-in buys the program computes fees on an initial estimate and takes any overshoot out of the curve amount; the SDK's quote formula got the token count right in only 5 of 18 real transactions. A buy completes the curve only when the tokens it would get reach what is left, not when its SOL covers the cost of the rest (a buy whose SOL exactly covered the rest still left dust). Legacy cashback coins pay their creator fee as cashback inside the same fee denominator. All of this was found by replaying real trades until every one matched.
+- **Order inside a slot can be recovered.** Every `TradeEvent` carries the reserves right after the trade, so the reserves right before it follow, and the next trade is the one that starts from the current state. This orders 100% of normal coins without fetching blocks.
+- **The stream has noise.** The public RPC sometimes sends notifications with an all-ones signature for trades that never landed, and stalls without disconnecting. The collector filters the first and records covered slot ranges so the simulator never trusts a gap.
+- **No lookahead.** A strategy sees an event at `slot + d`, its order lands at `+ L`, and it learns the result `d` slots after that. The create transaction is seen whole (the creator's own buy included).
 
-- `sim/market.py`: bonding curve market model. Reproduces every recorded trade exactly. Formulas and verification results are in [docs/sim-design.md](docs/sim-design.md) section 4.
-- `sim/replay.py`: picks which coins can be simulated, restores on-chain order within a slot, and yields events in the order a strategy would see them, at slot + observation delay.
+Full design, rules and measurements: [docs/sim-design.md](docs/sim-design.md). Protocol notes (in Korean): [docs/protocol-notes.md](docs/protocol-notes.md).
+
+## What the data says
+
+About 7 hours of mainnet data, 4,934 coins, 0.1 SOL per entry, exit at +100% / −50% / 10 minutes:
+
+| Strategy | Entered | Win rate | Median return | PnL (SOL) | PnL before costs | Profit factor |
+| --- | --- | --- | --- | --- | --- | --- |
+| `launch_sniper` (buy on creation) | 3,620 | 5.7% | −4.1% | −19.86 | −6.68 | 0.35 |
+| `random_baseline` (random entry time) | 4,859 | 3.7% | −4.1% | −28.07 | −11.27 | 0.22 |
+
+- Both lose money even before fees: the median coin goes down over ten minutes.
+- 27% of launch entries fail: bots buying in the same block as the coin's creation move the price past 15% slippage before a follow-up order lands.
+- Of coins that graduate, most do it in the same slot they are created (the creator buys the whole curve), so they cannot be entered at all.
+- Latency (1+1 to 3+5 slots) changes the result little; size changes it a lot, because a bigger order moves the curve against itself.
+
+## Writing a strategy
 
 ```python
-from sim.replay import load_universe, observations
-u = load_universe("data/pump.db")
-print(u.summary())                       # how many coins are in, and why the rest were excluded
-for obs in observations(u, observe_delay_slots=2):
-    obs.kind, obs.visible_slot, obs.view.state.price, obs.view.unique_buyers
-coin = u.coins[0]
-coin.state_at(coin.create_slot + 4, "end")   # the real curve state in a given slot (for fills)
-```
-- `sim/engine.py`: runs a strategy and fills its orders accounting for latency (observation delay d, landing L), slippage failures, network fees, account rent, and the forced exit at graduation.
+from pumpfun.sim.engine import Buy, Sell, Strategy
 
-```python
-from sim.engine import Strategy, Buy, Sell, EngineConfig, run
-
-class BuyOnCreate(Strategy):
-    def on_create(self, coin, ctx):
-        return [Buy(100_000_000)]                       # 0.1 SOL, 15% slippage
-    def on_tick(self, coin, pos, ctx):                  # every 25 slots while holding
-        if pos.tokens and coin.slots_since_create > 1500 and not ctx.pending_orders(coin.mint):
-            return [Sell(1.0, reason="time stop")]
+class BuyWhenPopular(Strategy):
+    def on_trade(self, coin, trade, pos, ctx):
+        if pos is None and coin.unique_buyers >= 20 and not coin.creator_sold and coin.slots_since_create < 150:
+            return [Buy(100_000_000)]                    # 0.1 SOL, 15% slippage
+        if pos and pos.tokens and pos.exit_value(coin.state) > 1.5 * pos.quote_in:
+            return [Sell(1.0, reason="take profit")]
         return []
-
-result = run(u, BuyOnCreate(), EngineConfig(observe_delay_slots=2, land_slots=2))
-for rt in result.round_trips:
-    rt.exit_reason, rt.pnl, rt.pnl_pct
 ```
 
-### Running a simulation
+Hooks: `on_create`, `on_trade`, `on_complete`, `on_tick` (called while you hold, and at times you ask for with `ctx.wake`), `on_fill`. Register it in `pumpfun/sim/strategies/__init__.py` to run it with `pumpfun sim --strategy <name>`. Use `--period tune` to shape the rules and `--period test` to judge them.
+
+## Project layout
+
+```
+pumpfun/
+  cli.py                 the `pumpfun` command
+  collect/               collector, log filter, IDL decoder, SQLite store, idl/pump.json
+  sim/                   market model, replay, engine, report, runner, strategies/
+  dashboard/             Streamlit app
+  sample.py              build / unpack the bundled sample
+  samples/               one hour of real data (7.6 MB gzip)
+tests/                   45 tests, real mainnet transactions as fixtures
+docs/                    design notes and protocol notes
+```
+
+## Tests
 
 ```bash
-python3 run_sim.py --strategy launch_sniper --baseline          # side by side with the random baseline
-python3 run_sim.py --strategy launch_sniper --sensitivity       # latency (d, L) x size grid
-python3 run_sim.py --strategy launch_sniper --period test --save
-python3 run_sim.py --strategy launch_sniper --hours 6           # 최근 6시간만 (빠름)
-python3 run_sim.py --help
+python3 -m unittest discover tests                      # ~3 s, on the bundled sample
+PUMP_DB=data/pump.db python3 -m unittest discover tests  # replay everything you collected
 ```
 
-- Strategies: `launch_sniper` (buy on creation), `random_baseline` (same exit rules, entry at a random moment). They're in `sim/strategies/` and share the exit rules (take profit / stop loss / time stop).
-- Only coins with at least the hold time + entry window (default 20 minutes) of data after creation are used, so every run and the baseline trade the same set of coins.
-- `--period tune|test`: splits the coins in half at the median creation time. Tune rules on `tune` and judge them on `test`.
-- `--save` writes the config, summary, and every round trip and fill to `data/sims/<time>_<strategy>.json`.
-- First results: [docs/sim-design.md](docs/sim-design.md) section 12.
+## Limitations
 
-## 테스트
+- Our own trades move the curve for our fills, but everyone else's recorded trades are replayed unchanged. Entry size is capped at 2% of the curve's reserves to keep that error small.
+- After graduation, positions are sold at the PumpSwap pool's opening reserves with a haircut; PumpSwap trades are not collected yet.
+- Mayhem-mode coins and coins paired with anything other than SOL are excluded.
+- Pump.fun changes its programs every few weeks. When `decode_err` appears in the collector's output or the replay tests fail, update `pumpfun/collect/idl/pump.json` from [pump-public-docs](https://github.com/pump-fun/pump-public-docs).
 
-```bash
-python3 -m unittest discover tests
-```
+## License
 
-`tests/fixtures`의 실제 메인넷 트랜잭션(2026-10-15)으로 디코딩, 본딩커브 수식, 수수료 반올림, 중복 처리를 확인합니다. `data/pump.db`(또는 `$PUMP_DB`)가 있으면 수집된 모든 거래를 시장 모델로 재현하는 테스트도 함께 돕니다.
-
-## 구조
-
-```
-collector.py            웹소켓 구독, 재연결, 통계
-dashboard/              Streamlit 대시보드 (app.py, data_view, sim_view, structure_view)
-pumpfun/idl_decoder.py  IDL 기반 Borsh 이벤트 디코더 (필드가 추가된 신/구 버전 이벤트도 처리)
-pumpfun/logs.py         로그에서 Pump 프로그램이 낸 "Program data:"만 골라냄
-pumpfun/store.py        SQLite 스키마와 저장
-idl/pump.json           공식 IDL (pump-public-docs, 2026-10-13 커밋)
-```
-
-Pump가 이벤트 필드를 추가하면 `idl/pump.json`을 공식 repo의 최신 파일로 교체하세요. 그전까지는 새 필드를 무시하고 기존 필드만 저장합니다.
+[MIT](LICENSE)

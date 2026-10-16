@@ -35,8 +35,8 @@ import random
 from dataclasses import dataclass, field, replace
 from typing import Dict, List, Optional
 
-from sim.market import BPS, CurveError, CurveState, FeeRates, buy_exact_quote_in, ceil_div, sell
-from sim.replay import COMPLETE, CREATE, MIGRATION, TRADE, CoinHistory, CoinView, Trade, Universe, observations
+from pumpfun.sim.market import BPS, CurveError, CurveState, FeeRates, buy_exact_quote_in, ceil_div, sell
+from pumpfun.sim.replay import COMPLETE, CREATE, MIGRATION, TRADE, CoinHistory, CoinView, Trade, Universe, observations
 
 LAMPORTS_PER_SOL = 1_000_000_000
 

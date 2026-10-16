@@ -6,8 +6,8 @@ Subscribes to the Pump program's logs over a Solana RPC websocket
 and the curve completion / migration events with the official IDL, and saves
 them to SQLite.
 
-    python3 collector.py                       # public mainnet RPC, data/pump.db
-    SOLANA_WS_URL=wss://... python3 collector.py --db data/pump.db
+    pumpfun collect                            # public mainnet RPC, data/pump.db
+    SOLANA_WS_URL=wss://... pumpfun collect --db data/pump.db
 
 Stop with Ctrl-C. Every websocket session is recorded in the `connections`
 table, so the time between a disconnect and the next connect is a known gap.
@@ -21,17 +21,15 @@ import logging
 import os
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Dict, Optional
 
 import websockets
 
-from pumpfun.idl_decoder import IdlEventDecoder
-from pumpfun.logs import is_truncated, program_data
-from pumpfun.store import SAVED_EVENTS, EventStore
+from pumpfun.collect.idl_decoder import IdlEventDecoder
+from pumpfun.collect.logs import is_truncated, program_data
+from pumpfun.collect.store import SAVED_EVENTS, EventStore
+from pumpfun.paths import IDL_PATH, default_db
 
-ROOT = Path(__file__).resolve().parent
-PUMP_IDL = ROOT / "idl" / "pump.json"
 DEFAULT_WS_URL = "wss://api.mainnet-beta.solana.com"
 
 COMMIT_INTERVAL      = 1.0    # seconds between SQLite commits
@@ -68,7 +66,7 @@ class Collector:
         self.ws_url = ws_url
         self.commitment = commitment
         self.stats_interval = stats_interval
-        self.decoder = IdlEventDecoder.from_file(PUMP_IDL)
+        self.decoder = IdlEventDecoder.from_file(IDL_PATH)
         self.program_id = self.decoder.address
         self.store = EventStore(db_path)
         self.stats = Stats()
@@ -164,16 +162,17 @@ class Collector:
                 self.stats.duplicates += 1
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+def add_arguments(parser: argparse.ArgumentParser):
     parser.add_argument("--ws-url", default=os.environ.get("SOLANA_WS_URL", DEFAULT_WS_URL),
                         help="Solana RPC websocket URL (default: $SOLANA_WS_URL or public mainnet)")
-    parser.add_argument("--db", default=str(ROOT / "data" / "pump.db"), help="SQLite file")
+    parser.add_argument("--db", default=None, help="SQLite file (default: data/pump.db)")
     parser.add_argument("--commitment", default="confirmed", choices=["processed", "confirmed", "finalized"])
     parser.add_argument("--stats-interval", type=float, default=30.0, help="seconds between stats lines")
     parser.add_argument("--quiet-coins", action="store_true", help="do not log every new coin")
-    args = parser.parse_args()
 
+
+def main(args: argparse.Namespace):
+    args.db = args.db or str(default_db())
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
                         datefmt="%H:%M:%S")
     if args.quiet_coins:
@@ -189,6 +188,3 @@ def main():
         log.info("stopped. %s", collector.stats.line())
         collector.store.close()
 
-
-if __name__ == "__main__":
-    main()

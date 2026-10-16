@@ -8,12 +8,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from run_sim import select_coins
-from sim.engine import EngineConfig, EngineResult, RoundTrip, run
-from sim.market import FeeRates, buy_exact_quote_in, sell
-from sim.replay import load_universe
-from sim.report import max_drawdown, summarize
-from sim.strategies import LaunchSniper, RandomBaseline
+from pumpfun.sim.runner import select_coins
+from pumpfun.sim.engine import EngineConfig, EngineResult, RoundTrip, run
+from pumpfun.sim.market import FeeRates, buy_exact_quote_in, sell
+from pumpfun.sim.replay import load_universe
+from pumpfun.sim.report import max_drawdown, summarize
+from pumpfun.sim.strategies import LaunchSniper, RandomBaseline
 from tests.test_replay import FakeChain
 
 SOL = 1_000_000_000

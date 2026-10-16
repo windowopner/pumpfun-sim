@@ -1,11 +1,11 @@
 """
 Run a paper-trading strategy over the collected data and print a summary.
 
-    python3 run_sim.py --strategy launch_sniper
-    python3 run_sim.py --strategy launch_sniper --baseline          # side by side with the random baseline
-    python3 run_sim.py --strategy launch_sniper --sensitivity       # latency x size grid
-    python3 run_sim.py --strategy launch_sniper --period test --save
-    python3 run_sim.py --strategy launch_sniper --hours 6           # only the last 6 hours (faster)
+    pumpfun sim --strategy launch_sniper
+    pumpfun sim --strategy launch_sniper --baseline          # side by side with the random baseline
+    pumpfun sim --strategy launch_sniper --sensitivity       # latency x size grid
+    pumpfun sim --strategy launch_sniper --period test --save
+    pumpfun sim --strategy launch_sniper --hours 6           # only the last 6 hours (faster)
 
 Coins are used only when the collector covered at least `--min-coverage-minutes`
 after their create (default: hold time + baseline entry window), so every run
@@ -22,13 +22,12 @@ from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Optional
 
-from sim.engine import LAMPORTS_PER_SOL, EngineConfig, run
-from sim.replay import Universe, latest_slot, load_universe
-from sim.report import format_comparison, format_summary, round_trip_record, summarize
-from sim.strategies import STRATEGIES
+from pumpfun.sim.engine import LAMPORTS_PER_SOL, EngineConfig, run
+from pumpfun.sim.replay import Universe, latest_slot, load_universe
+from pumpfun.sim.report import format_comparison, format_summary, round_trip_record, summarize
+from pumpfun.paths import default_db, sims_dir
+from pumpfun.sim.strategies import STRATEGIES
 
-ROOT = Path(__file__).resolve().parent
-SIMS_DIR = ROOT / "data" / "sims"
 SLOTS_PER_MINUTE = 150          # ~0.4 s per slot
 LATENCY_GRID = [(1, 1), (2, 2), (3, 5)]
 
@@ -48,6 +47,7 @@ def select_coins(universe: Universe, min_coverage_slots: int, period: str) -> Un
 def run_record(args: dict, config: EngineConfig, strategy, universe: Universe, result, summary: dict,
                baseline_summary: Optional[dict] = None, grid: Optional[list] = None) -> dict:
     """Everything about one run, as saved to data/sims/*.json (also read by the dashboard)."""
+    args = {k: v for k, v in args.items() if isinstance(v, (str, int, float, bool, type(None)))}
     return {
         "saved_at": time.strftime("%Y-%m-%d %H:%M:%S"), "args": args, "engine_config": asdict(config),
         "strategy_params": strategy.params(), "coins": len(universe.coins), "not_used": dict(universe.excluded),
@@ -58,7 +58,7 @@ def run_record(args: dict, config: EngineConfig, strategy, universe: Universe, r
 
 
 def save_record(record: dict, strategy_name: str) -> Path:
-    out = SIMS_DIR / f"{time.strftime('%Y%m%d-%H%M%S')}_{strategy_name}.json"
+    out = sims_dir() / f"{time.strftime('%Y%m%d-%H%M%S')}_{strategy_name}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(record, indent=1))
     return out
@@ -81,9 +81,8 @@ def make_strategy(name: str, args, size_sol: float):
     return STRATEGIES[name](**exit_rules)
 
 
-def main():
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--db", default=str(ROOT / "data" / "pump.db"))
+def add_arguments(p: argparse.ArgumentParser):
+    p.add_argument("--db", default=None, help="SQLite file (default: data/pump.db)")
     p.add_argument("--strategy", choices=sorted(STRATEGIES), default="launch_sniper")
     p.add_argument("--size", type=float, default=0.1, help="SOL per entry (default 0.1)")
     p.add_argument("--slippage-bps", type=int, default=1500)
@@ -105,8 +104,10 @@ def main():
     p.add_argument("--sizes", default="0.05,0.1,0.5", help="SOL sizes for --sensitivity")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--save", action="store_true", help="write data/sims/<time>_<strategy>.json")
-    args = p.parse_args()
 
+
+def main(args: argparse.Namespace):
+    args.db = args.db or str(default_db())
     t0 = time.time()
     universe = load_universe(args.db, since_slot(args.db, args.hours))
     coverage = args.min_coverage_minutes
@@ -157,5 +158,3 @@ def main():
         print(f"\nsaved {save_record(record, args.strategy)}")
 
 
-if __name__ == "__main__":
-    main()
