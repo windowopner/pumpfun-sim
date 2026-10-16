@@ -18,23 +18,27 @@ except ImportError:   # started with `streamlit run` from a source checkout
 import streamlit as st  # noqa: E402
 
 from pumpfun.dashboard.common import DEFAULT_DB  # noqa: E402
+from pumpfun.dashboard.i18n import language_picker, t  # noqa: E402
 
-st.set_page_config(page_title="Pump.fun 대시보드", layout="wide")
+st.set_page_config(page_title="Pump.fun dashboard", layout="wide")
 
 from pumpfun.dashboard import data_view, sim_view, structure_view  # noqa: E402
 
 with st.sidebar:
-    st.header("Pump.fun 대시보드")
-    db_path = st.text_input("데이터베이스", str(DEFAULT_DB))
-    if st.button("새로고침", width="stretch", help="캐시를 비우고 최신 데이터를 다시 읽어요"):
+    language_picker()
+    st.header(t("Pump.fun dashboard"))
+    db_path = st.text_input(t("Database"), str(DEFAULT_DB))
+    if st.button(t("Refresh"), width="stretch", help=t("Clear the cache and read the latest data")):
         st.cache_data.clear()
-    st.caption("수집 데이터 탭은 15초~10분마다 자동으로 새 값을 읽어요 (항목마다 다름).")
+    st.caption(t("The collected-data tab rereads on its own every 15 seconds to 10 minutes, depending on the item."))
+    st.caption(t("Unofficial, for learning only. Not affiliated with Pump.fun; no real trades, no wallets."))
 
 if not Path(db_path).exists():
-    st.error(f"데이터베이스가 없어요: {db_path}  \n`pumpfun collect`로 수집을 시작하거나 `pumpfun demo`로 샘플을 열어 보세요.")
+    st.error(t("No database at {path}. Start collecting with `pumpfun collect`, or open the sample with "
+               "`pumpfun demo`.", path=db_path))
     st.stop()
 
-data_tab, sim_tab, structure_tab = st.tabs(["수집 데이터", "시뮬레이션", "구조"])
+data_tab, sim_tab, structure_tab = st.tabs([t("Collected data"), t("Simulation"), t("Structure")])
 with data_tab:
     data_view.render(db_path)
 with sim_tab:

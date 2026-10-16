@@ -30,9 +30,11 @@ def cmd_sim(args):
     runner.main(args)
 
 
-def launch_dashboard(db: Path, port: int, open_browser: bool = True):
+def launch_dashboard(db: Path, port: int, open_browser: bool = True, lang: str = None):
     app = PACKAGE_DIR / "dashboard" / "app.py"
     env = {**os.environ, "PUMPFUN_DB": str(db)}
+    if lang:
+        env["PUMPFUN_LANG"] = lang
     print(f"dashboard on http://localhost:{port}  (data: {db}, Ctrl-C to stop)")
     try:
         subprocess.run([sys.executable, "-m", "streamlit", "run", str(app), "--server.port", str(port),
@@ -46,14 +48,14 @@ def cmd_dashboard(args):
     db = Path(args.db or default_db())
     if not db.exists():
         sys.exit(f"no database at {db}. Run `pumpfun collect` first, or `pumpfun demo` for the sample.")
-    launch_dashboard(db, args.port, not args.no_browser)
+    launch_dashboard(db, args.port, not args.no_browser, args.lang)
 
 
 def cmd_demo(args):
     from pumpfun.sample import ensure_sample
     db = ensure_sample()
     print(f"sample data: {db}")
-    launch_dashboard(db, args.port, not args.no_browser)
+    launch_dashboard(db, args.port, not args.no_browser, args.lang)
 
 
 def cmd_sample(args):
@@ -89,11 +91,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--db", default=None, help="SQLite file (default: data/pump.db)")
     p.add_argument("--port", type=int, default=8501)
     p.add_argument("--no-browser", action="store_true", help="do not open a browser window")
+    p.add_argument("--lang", choices=["en", "ko"], help="dashboard language (default: English; also $PUMPFUN_LANG)")
     p.set_defaults(func=cmd_dashboard)
 
     p = sub.add_parser("demo", help="open the dashboard on the bundled one-hour sample")
     p.add_argument("--port", type=int, default=8501)
     p.add_argument("--no-browser", action="store_true", help="do not open a browser window")
+    p.add_argument("--lang", choices=["en", "ko"], help="dashboard language (default: English; also $PUMPFUN_LANG)")
     p.set_defaults(func=cmd_demo)
 
     p = sub.add_parser("sample", help="rebuild the bundled sample from a collector database (maintainers)")

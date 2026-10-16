@@ -12,7 +12,7 @@ Paper-trading research on [Pump.fun](https://pump.fun), the Solana memecoin laun
 | **Market model** | Bonding-curve math in integer lamports that matches what the on-chain program records, not what the official SDK quotes. Verified against **2,309,807 of 2,309,807** recorded mainnet trades. |
 | **Replay** | Restores on-chain order inside a slot (the RPC stream does not keep it) by chaining each trade's reserves, and replays events at the moment a strategy could have seen them. |
 | **Engine** | Fills a strategy's orders on the true curve state at the landing slot: observation delay, landing latency, slippage failures, network and priority fees, token-account rent, and a forced exit into the PumpSwap pool on graduation. |
-| **Dashboard** | Streamlit app: collector health and gaps, coin explorer with price history, simulation runner with baseline comparison and per-trade charts, and a live map of the code. |
+| **Dashboard** | Streamlit app: collector health and gaps, coin explorer with price history, simulation runner with baseline comparison and per-trade charts, and a live map of the code. English, with a Korean option. |
 
 ## Quick start
 
@@ -33,6 +33,7 @@ With your own data:
 pumpfun collect                                   # record live events into data/pump.db (Ctrl-C to stop)
 pumpfun sim --strategy launch_sniper --baseline   # backtest, compared with a random-entry baseline
 pumpfun dashboard                                 # the dashboard on data/pump.db
+pumpfun dashboard --lang ko                       # 한국어 UI (or pick it in the sidebar)
 pumpfun --help
 ```
 
@@ -92,10 +93,10 @@ pumpfun/
   cli.py                 the `pumpfun` command
   collect/               collector, log filter, IDL decoder, SQLite store, idl/pump.json
   sim/                   market model, replay, engine, report, runner, strategies/
-  dashboard/             Streamlit app
+  dashboard/             Streamlit app (i18n.py + ko.py: English UI with Korean)
   sample.py              build / unpack the bundled sample
   samples/               one hour of real data (7.6 MB gzip)
-tests/                   45 tests, real mainnet transactions as fixtures
+tests/                   50 tests, real mainnet transactions as fixtures
 docs/                    design notes and protocol notes
 ```
 

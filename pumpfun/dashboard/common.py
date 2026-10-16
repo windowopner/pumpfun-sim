@@ -10,6 +10,7 @@ import pandas as pd
 import streamlit as st
 
 from pumpfun.collect.store import connect_readonly
+from pumpfun.dashboard.i18n import t
 from pumpfun.paths import PACKAGE_DIR, default_db
 from pumpfun.sim.market import INITIAL_VIRTUAL_QUOTE_RESERVES, INITIAL_VIRTUAL_TOKEN_RESERVES, ZERO_PUBKEY
 
@@ -53,10 +54,18 @@ def unix_to_local(seconds) -> pd.Series:
     return utc.dt.tz_convert(LOCAL_TZ).dt.tz_localize(None)
 
 
+KINDS = ["SOL", "mayhem", "other"]
+
+
 def coin_kind(quote_mint: str, mayhem) -> str:
+    """Language-neutral code (cached data keeps these); show it with kind_label()."""
     if mayhem:
         return "mayhem"
-    return "SOL" if quote_mint == ZERO_PUBKEY else "기타 페어"
+    return "SOL" if quote_mint == ZERO_PUBKEY else "other"
+
+
+def kind_label(kind: str) -> str:
+    return {"SOL": "SOL", "mayhem": "mayhem", "other": t("Other pair")}[kind]
 
 
 def sol(lamports) -> float:
@@ -65,7 +74,11 @@ def sol(lamports) -> float:
 
 def ago(seconds: float) -> str:
     if seconds < 90:
-        return f"{seconds:.0f}초 전"
+        return t("{n:.0f}s ago", n=seconds)
     if seconds < 5400:
-        return f"{seconds / 60:.0f}분 전"
-    return f"{seconds / 3600:.1f}시간 전"
+        return t("{n:.0f} min ago", n=seconds / 60)
+    return t("{n:.1f} h ago", n=seconds / 3600)
+
+
+def duration(seconds: float) -> str:
+    return t("{n:.1f} min", n=seconds / 60) if seconds >= 60 else t("{n:.0f} s", n=seconds)
