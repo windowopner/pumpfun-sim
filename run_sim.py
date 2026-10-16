@@ -5,6 +5,7 @@ Run a paper-trading strategy over the collected data and print a summary.
     python3 run_sim.py --strategy launch_sniper --baseline          # side by side with the random baseline
     python3 run_sim.py --strategy launch_sniper --sensitivity       # latency x size grid
     python3 run_sim.py --strategy launch_sniper --period test --save
+    python3 run_sim.py --strategy launch_sniper --hours 6           # only the last 6 hours (faster)
 
 Coins are used only when the collector covered at least `--min-coverage-minutes`
 after their create (default: hold time + baseline entry window), so every run
@@ -19,13 +20,15 @@ import statistics
 import time
 from dataclasses import asdict, replace
 from pathlib import Path
+from typing import Optional
 
 from sim.engine import LAMPORTS_PER_SOL, EngineConfig, run
-from sim.replay import Universe, load_universe
+from sim.replay import Universe, latest_slot, load_universe
 from sim.report import format_comparison, format_summary, round_trip_record, summarize
 from sim.strategies import STRATEGIES
 
 ROOT = Path(__file__).resolve().parent
+SIMS_DIR = ROOT / "data" / "sims"
 SLOTS_PER_MINUTE = 150          # ~0.4 s per slot
 LATENCY_GRID = [(1, 1), (2, 2), (3, 5)]
 
@@ -40,6 +43,33 @@ def select_coins(universe: Universe, min_coverage_slots: int, period: str) -> Un
         excluded[f"outside the {period} period"] += len(coins) - len(keep)
         coins = keep
     return Universe(coins, excluded, universe.covered_ranges, universe.dropped_trades)
+
+
+def run_record(args: dict, config: EngineConfig, strategy, universe: Universe, result, summary: dict,
+               baseline_summary: Optional[dict] = None, grid: Optional[list] = None) -> dict:
+    """Everything about one run, as saved to data/sims/*.json (also read by the dashboard)."""
+    return {
+        "saved_at": time.strftime("%Y-%m-%d %H:%M:%S"), "args": args, "engine_config": asdict(config),
+        "strategy_params": strategy.params(), "coins": len(universe.coins), "not_used": dict(universe.excluded),
+        "summary": summary, "baseline_summary": baseline_summary,
+        "sensitivity": [{"run": label, "summary": s} for label, s in grid or []],
+        "round_trips": [round_trip_record(rt) for rt in result.round_trips],
+    }
+
+
+def save_record(record: dict, strategy_name: str) -> Path:
+    out = SIMS_DIR / f"{time.strftime('%Y%m%d-%H%M%S')}_{strategy_name}.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(record, indent=1))
+    return out
+
+
+def since_slot(db_path, hours: Optional[float]) -> Optional[int]:
+    """First slot of the last `hours` of collected data, or None for everything."""
+    if not hours:
+        return None
+    last = latest_slot(db_path)
+    return last - int(hours * 60 * SLOTS_PER_MINUTE) if last is not None else None
 
 
 def make_strategy(name: str, args, size_sol: float):
@@ -68,6 +98,7 @@ def main():
     p.add_argument("--drop-rate", type=float, default=0.0)
     p.add_argument("--haircut", type=float, default=0.10, help="pool price cut at the graduation exit")
     p.add_argument("--min-coverage-minutes", type=float, help="default: hold + entry window")
+    p.add_argument("--hours", type=float, help="only coins created in the last N hours of data (default: all)")
     p.add_argument("--period", choices=["all", "tune", "test"], default="all")
     p.add_argument("--baseline", action="store_true", help="also run random_baseline with the same exit rules")
     p.add_argument("--sensitivity", action="store_true", help="grid of latency (d, L) x --sizes")
@@ -77,12 +108,13 @@ def main():
     args = p.parse_args()
 
     t0 = time.time()
-    universe = load_universe(args.db)
+    universe = load_universe(args.db, since_slot(args.db, args.hours))
     coverage = args.min_coverage_minutes
     if coverage is None:
         coverage = args.hold_minutes + args.entry_window_minutes
     universe = select_coins(universe, int(coverage * SLOTS_PER_MINUTE), args.period)
-    print(f"{len(universe.coins)} coins ({args.period}), loaded in {time.time() - t0:.1f}s; not used: "
+    window = f"last {args.hours:g}h" if args.hours else "all data"
+    print(f"{len(universe.coins)} coins ({window}, {args.period}), loaded in {time.time() - t0:.1f}s; not used: "
           + ", ".join(f"{k} {v}" for k, v in universe.excluded.most_common()))
     if not universe.coins:
         return
@@ -121,16 +153,8 @@ def main():
         print(format_comparison(grid))
 
     if args.save:
-        out = ROOT / "data" / "sims" / f"{time.strftime('%Y%m%d-%H%M%S')}_{args.strategy}.json"
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps({
-            "args": vars(args), "engine_config": asdict(config), "strategy_params": strategy.params(),
-            "coins": len(universe.coins), "not_used": dict(universe.excluded),
-            "summary": summary, "baseline_summary": baseline_summary,
-            "sensitivity": [{"run": label, "summary": s} for label, s in grid],
-            "round_trips": [round_trip_record(rt) for rt in result.round_trips],
-        }, indent=1))
-        print(f"\nsaved {out}")
+        record = run_record(vars(args), config, strategy, universe, result, summary, baseline_summary, grid)
+        print(f"\nsaved {save_record(record, args.strategy)}")
 
 
 if __name__ == "__main__":

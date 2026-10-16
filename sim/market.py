@@ -15,10 +15,12 @@ the program:
                         tokens = floor((quote - 1) * vT / (vQ + quote - 1))
                         (the SDK computes from (spendable - 1) instead and overstates
                         tokens on most buys)
-                        If floor(quote * vT / (vQ + quote)) reaches the tokens left on the
-                        curve, the buy takes all of them at the exact-tokens cost and the
-                        rest of `spendable` stays with the buyer. (The threshold is inferred:
-                        events do not record `spendable` on completing buys.)
+                        If those tokens reach what is left on the curve, the buy takes all
+                        of it at the exact-tokens cost and the rest of `spendable` stays with
+                        the buyer. (Inferred from recorded trades: a buy whose quote equalled
+                        the cost of everything left still got only `tokens` and left dust,
+                        so the check is on `tokens`, not on the quote. Completing buys do not
+                        record `spendable`, so this cannot be checked more directly.)
     sell                gross = floor(amount * vQ / (vT + amount))
                         fees = ceil(gross * bps / 10000); seller gets gross - fees
 
@@ -32,7 +34,7 @@ sells it is assumed to be charged the same way (to verify against `cashback`).
 
 Not modeled: the v3 synthetic migration (a buy that crosses completion) and
 mayhem coins, whose quote reserves follow a different rule. `multi_hop_swap`
-hops are only replayed from their recorded amounts (see `replay_trade`).
+hops are only replayed from their recorded amounts (see `_replay_multi_hop`).
 """
 
 from dataclasses import dataclass, replace
@@ -210,9 +212,9 @@ def buy_exact_quote_in(state: CurveState, spendable: int, rates: FeeRates) -> Fi
     quote = x0 - max(0, x0 + protocol_fee + creator_fee + cashback_fee - spendable)
     if quote <= 1:
         raise CurveError("spendable too small")
-    if quote * state.virtual_token_reserves // (state.virtual_quote_reserves + quote) >= state.real_token_reserves:
-        return buy_exact_tokens(state, state.real_token_reserves, rates)
     tokens = _tokens_for_quote(state, quote)
+    if tokens >= state.real_token_reserves:
+        return buy_exact_tokens(state, state.real_token_reserves, rates)
     if tokens == 0:
         raise CurveError("buys zero tokens")
     return Fill(True, quote, tokens, protocol_fee, creator_fee, state._apply(True, quote, tokens), cashback_fee)
@@ -241,6 +243,10 @@ def replay_trade(state: CurveState, event: Dict[str, Any], rates: FeeRates) -> F
     intent = INTENT_BY_IX.get(event["ix_name"])
     if intent == EXACT_TOKENS:
         return buy_exact_tokens(state, event["token_amount"], rates)
+    if intent == EXACT_QUOTE_IN and event["real_token_reserves"] == 0:
+        # A completing buy refunds what it did not spend, so the event does not tell
+        # `spendable`; what it did is buy everything that was left at the exact-tokens cost.
+        return buy_exact_tokens(state, event["token_amount"], rates)
     if intent == EXACT_QUOTE_IN:
         spendable = event["quote_amount"] + event["fee"] + event["creator_fee"] + (event.get("cashback") or 0)
         return buy_exact_quote_in(state, spendable, rates)
@@ -253,13 +259,17 @@ def _replay_multi_hop(state: CurveState, event: Dict[str, Any], rates: FeeRates)
     """
     A bonding curve hop of `multi_hop_swap`. The hop's input is not in the event,
     so the curve side is replayed from the recorded quote (buy) or token (sell)
-    amount. The protocol fee here is ceil(quote * bps); the program computes it on
-    the hop input, so the recorded fee can differ by 1 lamport. The creator fee
-    stays on the curve and the event reports it as 0.
+    amount. Pass the creator rate the event reports: most hops report 0 (their
+    creator fee stays on the curve), a few report the coin's usual 30 bps. The
+    protocol fee here is ceil(quote * bps); the program computes it on the hop
+    input, so the recorded fee can differ by 1 lamport. A hop that empties the curve buys everything left
+    at the exact-tokens cost, like an exact-quote-in buy.
     """
-    if event["is_buy"]:
-        quote = event["quote_amount"]
-        tokens = _tokens_for_quote(state, quote)
-        return Fill(True, quote, tokens, rates.protocol_fee(quote), 0, state._apply(True, quote, tokens))
-    f = sell(state, event["token_amount"], rates)
-    return replace(f, creator_fee=0)
+    if not event["is_buy"]:
+        return sell(state, event["token_amount"], rates)
+    if event["real_token_reserves"] == 0:
+        return buy_exact_tokens(state, event["token_amount"], rates)
+    quote = event["quote_amount"]
+    tokens = _tokens_for_quote(state, quote)
+    return Fill(True, quote, tokens, rates.protocol_fee(quote), rates.creator_fee(quote),
+                state._apply(True, quote, tokens), rates.cashback_fee(quote))

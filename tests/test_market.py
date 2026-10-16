@@ -14,6 +14,7 @@ import json
 import os
 import sqlite3
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from sim.market import (
@@ -259,7 +260,12 @@ class ReproduceRecordedTrades(unittest.TestCase):
                     break
                 t = candidates.pop()
                 left -= 1
-                fill = replay_trade(state, t, FeeRates(t["fee_basis_points"], rates.creator_bps))
+                # Multi-hop hops charge a creator fee only when their event reports a rate (most
+                # report 0: the fee stays on the curve), so for them the event decides.
+                creator_bps = t["creator_fee_basis_points"] if t["ix_name"] == "multi_hop_swap" else rates.creator_bps
+                fill = replay_trade(state, t, FeeRates(t["fee_basis_points"], creator_bps))
+                if t["ix_name"] == "multi_hop_swap" and abs(fill.protocol_fee - t["fee"]) == 1:
+                    fill = replace(fill, protocol_fee=t["fee"])   # hop input not recorded, see the test above
                 if got(fill) != expected(t):
                     failures.append((coin["mint"], t["signature"], got(fill), expected(t)))
                     break

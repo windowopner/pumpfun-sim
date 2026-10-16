@@ -5,6 +5,24 @@ Pump.fun 페이퍼트레이딩 시뮬레이터를 만들기 위한 학습 프로
 - 프로토콜 정리: [docs/protocol-notes.md](docs/protocol-notes.md)
 - 시뮬레이터 설계: [docs/sim-design.md](docs/sim-design.md)
 
+## Dashboard
+
+수집 데이터, 시뮬레이션, 프로젝트 구조를 한 화면에서 봅니다.
+
+```bash
+python3 -m streamlit run dashboard/app.py
+```
+
+브라우저에서 http://localhost:8501 이 열립니다. `pump.db`를 읽기 전용으로 열어서 수집기가 돌아가는 중에도 써도 됩니다.
+
+| 탭 | 내용 |
+| --- | --- |
+| 수집 데이터 | 코인·거래 수, 마지막 수신 시각, DB 크기, 수집 구간과 공백, 시간별 새 코인, 최근 코인 목록. 코인을 누르면 가격 흐름과 거래 목록 |
+| 시뮬레이션 | 폼으로 전략을 실행하거나 저장된 결과(`data/sims`)를 엽니다. 요약 지표, random baseline 비교, 누적 손익, 청산 이유, 비용, 수익률 분포. 거래를 누르면 가격 위에 진입·청산 표시 |
+| 구조 | 데이터 흐름도, 파일별 역할과 함수 목록(소스의 docstring에서 바로 읽음), DB 테이블, 테스트 목록, 문서 |
+
+시뮬레이션은 기본으로 최근 6시간 데이터만 씁니다 (약 15초). 데이터가 하루 수백만 건씩 늘어서 전체를 읽으면 오래 걸리고 메모리를 많이 씁니다.
+
 ## Collector
 
 Solana RPC 웹소켓으로 Pump 프로그램(`6EF8rrec...`)의 로그를 구독하고, 공식 IDL(`idl/pump.json`)로 이벤트를 디코딩해서 SQLite에 저장합니다.
@@ -90,6 +108,7 @@ for rt in result.round_trips:
 python3 run_sim.py --strategy launch_sniper --baseline          # side by side with the random baseline
 python3 run_sim.py --strategy launch_sniper --sensitivity       # latency (d, L) x size grid
 python3 run_sim.py --strategy launch_sniper --period test --save
+python3 run_sim.py --strategy launch_sniper --hours 6           # 최근 6시간만 (빠름)
 python3 run_sim.py --help
 ```
 
@@ -111,6 +130,7 @@ python3 -m unittest discover tests
 
 ```
 collector.py            웹소켓 구독, 재연결, 통계
+dashboard/              Streamlit 대시보드 (app.py, data_view, sim_view, structure_view)
 pumpfun/idl_decoder.py  IDL 기반 Borsh 이벤트 디코더 (필드가 추가된 신/구 버전 이벤트도 처리)
 pumpfun/logs.py         로그에서 Pump 프로그램이 낸 "Program data:"만 골라냄
 pumpfun/store.py        SQLite 스키마와 저장

@@ -163,35 +163,87 @@ def _covering_range(ranges: List[Tuple[int, int]], slot: int) -> Optional[Tuple[
     return None
 
 
-def load_universe(db_path) -> Universe:
+# Trades are stored in arrival order, which follows slot order to within a few slots;
+# the rowid search for a start slot backs off this far to be safe.
+ROWID_SLOT_MARGIN = 1_000
+
+
+def first_trade_rowid(db: sqlite3.Connection, slot: int) -> int:
+    """Smallest rowid whose trade is at or after `slot` (binary search over arrival order)."""
+    lo, hi = db.execute("SELECT min(rowid), max(rowid) FROM trades").fetchone()
+    if lo is None:
+        return 0
+    while lo < hi:
+        mid = (lo + hi) // 2
+        row = db.execute("SELECT slot FROM trades WHERE rowid >= ? ORDER BY rowid LIMIT 1", (mid,)).fetchone()
+        if row is None or row[0] >= slot:
+            hi = mid
+        else:
+            lo = mid + 1
+    return lo
+
+
+def latest_slot(db_path) -> Optional[int]:
+    with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as db:
+        return db.execute("SELECT max(slot) FROM coins").fetchone()[0]
+
+
+def load_universe(db_path, since_slot: Optional[int] = None) -> Universe:
+    """
+    Coins created at or after `since_slot` (all coins when None) and their trades.
+    Only the trades of coins that can be simulated are turned into Python objects;
+    the rest of the scan is just counted, which keeps memory and time down.
+    """
     db = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     db.row_factory = sqlite3.Row
     ranges = sorted((a, b) for a, b in db.execute(
         "SELECT first_slot, last_slot FROM connections WHERE first_slot IS NOT NULL AND last_slot IS NOT NULL"))
+    since = since_slot or 0
 
     excluded: Counter[str] = collections.Counter()
     dropped: Counter[str] = collections.Counter()
 
-    rows_by_mint: Dict[str, List[dict]] = collections.defaultdict(list)
-    for r in db.execute("SELECT * FROM trades"):
-        if r["signature"] == PHANTOM_SIGNATURE:
-            dropped["phantom notification"] += 1
-        else:
-            rows_by_mint[r["mint"]].append(dict(r))
+    candidates: Dict[str, dict] = {}
+    for c in db.execute("SELECT * FROM coins WHERE signature != ? AND slot >= ? ORDER BY slot",
+                        (PHANTOM_SIGNATURE, since)):
+        c = dict(c)
+        reason = _exclusion(c)
+        if reason:
+            excluded[reason] += 1
+        candidates[c["mint"]] = c if reason is None else None
 
+    db.row_factory = None
+    start = first_trade_rowid(db, since - ROWID_SLOT_MARGIN) if since_slot else 0
+    cur = db.execute("SELECT * FROM trades WHERE rowid >= ?", (start,))
+    columns = [d[0] for d in cur.description]
+    i_mint, i_sig, i_slot = columns.index("mint"), columns.index("signature"), columns.index("slot")
+    rows_by_mint: Dict[str, List[dict]] = collections.defaultdict(list)
+    other: Counter[str] = collections.Counter()
+    for r in cur:
+        if r[i_slot] < since:
+            continue
+        if r[i_sig] == PHANTOM_SIGNATURE:
+            dropped["phantom notification"] += 1
+        elif candidates.get(r[i_mint]) is not None:
+            rows_by_mint[r[i_mint]].append(dict(zip(columns, r)))
+        else:
+            other[r[i_mint]] += 1
+
+    db.row_factory = sqlite3.Row
     lifecycle: Dict[str, List[dict]] = collections.defaultdict(list)
-    for r in db.execute("SELECT * FROM lifecycle WHERE signature != ?", (PHANTOM_SIGNATURE,)):
-        lifecycle[r["mint"]].append(dict(r))
+    for r in db.execute("SELECT * FROM lifecycle WHERE signature != ? AND slot >= ?", (PHANTOM_SIGNATURE, since)):
+        if candidates.get(r["mint"]) is not None:
+            lifecycle[r["mint"]].append(dict(r))
 
     coins: List[CoinHistory] = []
-    created = set()
-    for c in db.execute("SELECT * FROM coins WHERE signature != ? ORDER BY slot", (PHANTOM_SIGNATURE,)):
-        c = dict(c)
-        created.add(c["mint"])
-        rows = rows_by_mint.get(c["mint"], [])
-        reason = _exclusion(c, rows)
+    for mint, c in candidates.items():
+        if c is None:
+            continue
+        rows = rows_by_mint.get(mint, [])
+        reason = "unexpected protocol fee rate" if any(r["fee_basis_points"] != PROTOCOL_FEE_BPS for r in rows) else None
+        n_after_range = 0
         if reason is None:
-            coin, reason, n_after_range = _build_coin(c, rows, lifecycle.get(c["mint"], []), ranges)
+            coin, reason, n_after_range = _build_coin(c, rows, lifecycle.get(mint, []), ranges)
         if reason:
             excluded[reason] += 1
             dropped[f"coin excluded ({reason})"] += len(rows)
@@ -199,20 +251,19 @@ def load_universe(db_path) -> Universe:
             coins.append(coin)
             dropped["after the coin's covered range"] += n_after_range
 
-    dropped["create not seen"] += sum(len(v) for m, v in rows_by_mint.items() if m not in created)
+    for mint, n in other.items():
+        dropped["create not seen" if mint not in candidates else "coin excluded (not SOL-paired, mayhem or cashback)"] += n
     db.close()
     return Universe(coins, excluded, ranges, +dropped)
 
 
-def _exclusion(c: dict, rows: List[dict]) -> Optional[str]:
+def _exclusion(c: dict) -> Optional[str]:
     if c["quote_mint"] != ZERO_PUBKEY:
         return "not SOL-paired"
     if c["is_mayhem_mode"]:
         return "mayhem mode"
     if c["is_cashback_enabled"]:
         return "cashback coin"
-    if any(r["fee_basis_points"] != PROTOCOL_FEE_BPS for r in rows):
-        return "unexpected protocol fee rate"
     return None
 
 
