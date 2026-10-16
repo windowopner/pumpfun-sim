@@ -189,6 +189,28 @@ def latest_slot(db_path) -> Optional[int]:
         return db.execute("SELECT max(slot) FROM coins").fetchone()[0]
 
 
+NOMINAL_SECONDS_PER_SLOT = 0.4   # only when the data is too short to measure
+MIN_SLOTS_TO_MEASURE = 1_000
+
+
+def seconds_per_slot(db_path) -> float:
+    """
+    Slot time measured from the data: the on-chain clock between the first and last
+    coin. Slots run well under the nominal 0.4 s (about 0.216 s in October 2026), so
+    minutes and hours are converted with this, never with a constant.
+    """
+    with connect_readonly(db_path) as db:
+        first = db.execute("SELECT slot, timestamp FROM coins WHERE rowid = (SELECT min(rowid) FROM coins)").fetchone()
+        last = db.execute("SELECT slot, timestamp FROM coins WHERE rowid = (SELECT max(rowid) FROM coins)").fetchone()
+    if not first or not last or last[0] - first[0] < MIN_SLOTS_TO_MEASURE:
+        return NOMINAL_SECONDS_PER_SLOT
+    return (last[1] - first[1]) / (last[0] - first[0])
+
+
+def slots_per_minute(db_path) -> float:
+    return 60 / seconds_per_slot(db_path)
+
+
 def load_universe(db_path, since_slot: Optional[int] = None) -> Universe:
     """
     Coins created at or after `since_slot` (all coins when None) and their trades.

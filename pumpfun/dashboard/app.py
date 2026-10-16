@@ -2,7 +2,7 @@
 Pump.fun dashboard: collected data, simulations and the project structure in one place.
 
     pumpfun dashboard          # your data (data/pump.db)
-    pumpfun demo               # the bundled one-hour sample
+    pumpfun demo               # the bundled half-hour sample
 
 Reads the database read-only, so it can run while the collector is writing.
 """

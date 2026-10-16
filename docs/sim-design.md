@@ -7,7 +7,7 @@
 
 - **Event replay.** Replay the recorded `CreateEvent` and `TradeEvent`s one coin at a time in on-chain order. The strategy can only see events from before the moment it would have observed them.
 - **Prices are not estimated; the curve is recomputed.** On the bonding curve, price is fully determined by the reserves, so fills are computed exactly with the formulas from the official SDK.
-- **Time is measured in slots (~0.4s), not seconds.** The on-chain `timestamp` has 1-second resolution, which is too coarse for a latency model.
+- **Time is measured in slots, not seconds.** The on-chain `timestamp` has 1-second resolution, which is too coarse for a latency model. Minutes and hours given as options are turned into slots with the slot time **measured from the data** (`replay.seconds_per_slot`: about 0.216 s in October 2026, well under Solana's nominal 0.4 s). Until 2026-10-16 a fixed 0.4 s was used, so minute figures in older notes were too long by a factor of about 1.85; they are corrected below.
 - **Be conservative by default.** Latency, fill position within a slot, slippage failures, network fees and account rent are all applied by default. Optimistic settings are only for sensitivity analysis.
 - **Graduation:** in v1, a position is force-closed when the coin graduates. Holding after graduation needs PumpSwap data (v2).
 
@@ -161,7 +161,7 @@ class Strategy:
 
 Implemented (`pumpfun/sim/engine.py`):
 
-- `Strategy` hooks: `on_create(coin, ctx)`, `on_trade(coin, trade, pos, ctx)`, `on_complete(coin, pos, ctx)`, plus `on_tick(coin, pos, ctx)` and `on_fill(fill, pos, ctx)`. **A dead coin produces no events, so time stops need ticks:** while a coin has a position or orders in flight, `on_tick` is called every `tick_slots` (default 25, ~10 seconds).
+- `Strategy` hooks: `on_create(coin, ctx)`, `on_trade(coin, trade, pos, ctx)`, `on_complete(coin, pos, ctx)`, plus `on_tick(coin, pos, ctx)` and `on_fill(fill, pos, ctx)`. **A dead coin produces no events, so time stops need ticks:** while a coin has a position or orders in flight, `on_tick` is called every `tick_slots` (default 25, ~5 seconds).
 - Orders: `Buy(quote=lamports, slippage_bps=1500)`, `Sell(fraction=1.0, slippage_bps=1500)`, each with a `reason` (shown as the exit reason). `ctx.pending_orders(mint)` helps avoid sending duplicates.
 - `pos.exit_value(state, rates)`: SOL received if everything were sold at that state (curve fees included, tx costs not). Use it for take profit / stop loss.
 - Results: `RoundTrip` (entry→exit for one coin: in/out SOL, tx costs, net rent, failed and dropped count, exit reason, `pnl`, `pnl_pct`, every fill), plus wallet-level one-time costs (`one_time_costs`). If every buy fails, it's still a round trip with `entry failed` and the fees as its loss.
@@ -202,9 +202,9 @@ Outputs go to `sim_runs` / `sim_fills` tables (or `data/sims/<run_id>.json`):
 
 ## 10. Data to check once more has accumulated
 
-- [x] Graduation rate: 7 of 254 coins with at least 1 hour of coverage (2.8%). **5 of the 7 completed in the same slot they were created** (the creator buys the whole curve at launch); the other two took 1 and 141 slots. So most graduations can't be entered at all, and section 6 rarely comes into play.
-- [x] Price change by slot after launch, relative to the end of the create slot (i.e. after the dev buy and same-slot snipers), 254 coins: after 2 slots median 1.00× / p90 1.03× / max 1.3×; after 10 slots 1.00× / 1.06× / 1.7×; after 150 slots (~1 min) 1.00× / 1.11× / 2.3×. Most coins barely move; latency costs a lot only on the few that take off.
-- [x] Coin lifetime (create → last trade), 254 coins: median 685 slots (~4.5 min), p75 4,160 (~28 min), p90 7,514 (~50 min). No trades after 1 minute: 23%; after 5 minutes: 51%; after 15 minutes: 67%. Size time stops around this.
+- [x] Graduation rate: 7 of 254 coins with at least 9,000 slots (~32 min) of coverage (2.8%). **5 of the 7 completed in the same slot they were created** (the creator buys the whole curve at launch); the other two took 1 and 141 slots. So most graduations can't be entered at all, and section 6 rarely comes into play.
+- [x] Price change by slot after launch, relative to the end of the create slot (i.e. after the dev buy and same-slot snipers), 254 coins: after 2 slots median 1.00× / p90 1.03× / max 1.3×; after 10 slots 1.00× / 1.06× / 1.7×; after 150 slots (~32 s) 1.00× / 1.11× / 2.3×. Most coins barely move; latency costs a lot only on the few that take off.
+- [x] Coin lifetime (create → last trade), 254 coins: median 685 slots (~2.5 min), p75 4,160 (~15 min), p90 7,514 (~27 min). No trades after 150 slots (~32 s): 23%; after 750 (~2.7 min): 51%; after 2,250 (~8 min): 67%. Size time stops around this.
 - [x] Whether reserve-chain ordering still succeeds 100% for normal coins over long periods: 769/769 coins over ~2 hours, after removing phantom notifications and gaps
 - [x] Entry failures for a buy-on-create strategy (engine smoke run, 1,130 coins, 0.1 SOL, 15% slippage, d=2/L=2): 22% of entries fail. Most are slippage failures (230): **94% of those coins had other bots buy in the creation slot itself (median 4)**, and at our landing the price was already ≥1.18× (median 1.38×) what the strategy saw right after the dev buy. Another 21 hit an already-completed curve (instant graduation).
 - [ ] In `fee bps (0,0)` trades, separate out the mayhem agent's trades from everything else

@@ -23,12 +23,11 @@ from pathlib import Path
 from typing import Optional
 
 from pumpfun.sim.engine import LAMPORTS_PER_SOL, EngineConfig, run
-from pumpfun.sim.replay import Universe, latest_slot, load_universe
+from pumpfun.sim.replay import Universe, latest_slot, load_universe, slots_per_minute
 from pumpfun.sim.report import format_comparison, format_summary, round_trip_record, summarize
 from pumpfun.paths import default_db, sims_dir
 from pumpfun.sim.strategies import STRATEGIES
 
-SLOTS_PER_MINUTE = 150          # ~0.4 s per slot
 LATENCY_GRID = [(1, 1), (2, 2), (3, 5)]
 
 
@@ -45,12 +44,14 @@ def select_coins(universe: Universe, min_coverage_slots: int, period: str) -> Un
 
 
 def run_record(args: dict, config: EngineConfig, strategy, universe: Universe, result, summary: dict,
-               baseline_summary: Optional[dict] = None, grid: Optional[list] = None) -> dict:
+               baseline_summary: Optional[dict] = None, grid: Optional[list] = None,
+               spm: Optional[float] = None) -> dict:
     """Everything about one run, as saved to data/sims/*.json (also read by the dashboard)."""
     args = {k: v for k, v in args.items() if isinstance(v, (str, int, float, bool, type(None)))}
     return {
         "saved_at": time.strftime("%Y-%m-%d %H:%M:%S"), "args": args, "engine_config": asdict(config),
-        "strategy_params": strategy.params(), "coins": len(universe.coins), "not_used": dict(universe.excluded),
+        "strategy_params": strategy.params(), "slots_per_minute": spm,
+        "coins": len(universe.coins), "not_used": dict(universe.excluded),
         "summary": summary, "baseline_summary": baseline_summary,
         "sensitivity": [{"run": label, "summary": s} for label, s in grid or []],
         "round_trips": [round_trip_record(rt) for rt in result.round_trips],
@@ -69,14 +70,15 @@ def since_slot(db_path, hours: Optional[float]) -> Optional[int]:
     if not hours:
         return None
     last = latest_slot(db_path)
-    return last - int(hours * 60 * SLOTS_PER_MINUTE) if last is not None else None
+    return last - int(hours * 60 * slots_per_minute(db_path)) if last is not None else None
 
 
-def make_strategy(name: str, args, size_sol: float):
+def make_strategy(name: str, args, size_sol: float, spm: float):
+    """`spm`: slots per minute, measured from the data (see replay.slots_per_minute)."""
     exit_rules = dict(size_sol=size_sol, slippage_bps=args.slippage_bps, take_profit=args.take_profit,
-                      stop_loss=args.stop_loss, max_hold_slots=int(args.hold_minutes * SLOTS_PER_MINUTE))
+                      stop_loss=args.stop_loss, max_hold_slots=int(args.hold_minutes * spm))
     if name == "random_baseline":
-        return STRATEGIES[name](entry_window_slots=int(args.entry_window_minutes * SLOTS_PER_MINUTE),
+        return STRATEGIES[name](entry_window_slots=int(args.entry_window_minutes * spm),
                                 seed=args.seed, **exit_rules)
     return STRATEGIES[name](**exit_rules)
 
@@ -113,9 +115,11 @@ def main(args: argparse.Namespace):
     coverage = args.min_coverage_minutes
     if coverage is None:
         coverage = args.hold_minutes + args.entry_window_minutes
-    universe = select_coins(universe, int(coverage * SLOTS_PER_MINUTE), args.period)
+    spm = slots_per_minute(args.db)
+    universe = select_coins(universe, int(coverage * spm), args.period)
     window = f"last {args.hours:g}h" if args.hours else "all data"
-    print(f"{len(universe.coins)} coins ({window}, {args.period}), loaded in {time.time() - t0:.1f}s; not used: "
+    print(f"{len(universe.coins)} coins ({window}, {args.period}, {60 / spm:.3f} s per slot), "
+          f"loaded in {time.time() - t0:.1f}s; not used: "
           + ", ".join(f"{k} {v}" for k, v in universe.excluded.most_common()))
     if not universe.coins:
         return
@@ -123,7 +127,7 @@ def main(args: argparse.Namespace):
     config = EngineConfig(observe_delay_slots=args.observe_delay, land_slots=args.land, intra_slot=args.intra,
                           priority_fee=int(args.priority_fee * LAMPORTS_PER_SOL), drop_rate=args.drop_rate,
                           post_grad_haircut=args.haircut, seed=args.seed)
-    strategy = make_strategy(args.strategy, args, args.size)
+    strategy = make_strategy(args.strategy, args, args.size, spm)
     result = run(universe, strategy, config)
     summary = summarize(result)
     print()
@@ -133,7 +137,7 @@ def main(args: argparse.Namespace):
     rows = [(args.strategy, summary)]
     baseline_summary = None
     if args.baseline and args.strategy != "random_baseline":
-        baseline = run(universe, make_strategy("random_baseline", args, args.size), config)
+        baseline = run(universe, make_strategy("random_baseline", args, args.size, spm), config)
         baseline_summary = summarize(baseline)
         print()
         print(format_summary(baseline_summary, "== random_baseline (same size and exit rules)"))
@@ -147,14 +151,14 @@ def main(args: argparse.Namespace):
         sizes = [float(x) for x in args.sizes.split(",")]
         for d, land in LATENCY_GRID:
             for size in sizes:
-                r = run(universe, make_strategy(args.strategy, args, size),
+                r = run(universe, make_strategy(args.strategy, args, size, spm),
                         replace(config, observe_delay_slots=d, land_slots=land))
                 grid.append((f"d={d} L={land} {size} SOL", summarize(r)))
         print("\n== sensitivity: latency x size")
         print(format_comparison(grid))
 
     if args.save:
-        record = run_record(vars(args), config, strategy, universe, result, summary, baseline_summary, grid)
+        record = run_record(vars(args), config, strategy, universe, result, summary, baseline_summary, grid, spm)
         print(f"\nsaved {save_record(record, args.strategy)}")
 
 

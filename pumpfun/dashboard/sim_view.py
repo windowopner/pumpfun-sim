@@ -8,14 +8,15 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from pumpfun.dashboard.common import LAUNCH_PRICE, slot_to_time
+from pumpfun.dashboard.common import LAUNCH_PRICE, seconds_per_slot, slot_to_time
 from pumpfun.dashboard.data_view import coin_history
 from pumpfun.dashboard.i18n import t
 from pumpfun.paths import sims_dir
 from pumpfun.sim.engine import LAMPORTS_PER_SOL, EngineConfig, run
 from pumpfun.sim.replay import load_universe
 from pumpfun.sim.report import round_trip_record, summarize
-from pumpfun.sim.runner import SLOTS_PER_MINUTE, make_strategy, run_record, save_record, select_coins, since_slot
+from pumpfun.sim.replay import slots_per_minute
+from pumpfun.sim.runner import make_strategy, run_record, save_record, select_coins, since_slot
 from pumpfun.sim.strategies import STRATEGIES
 
 
@@ -90,19 +91,20 @@ def render_run_form(db_path: str):
                                hold_minutes=hold, entry_window_minutes=window, seed=0)
         with st.spinner(t("Loading coin data (about 15 seconds for 6 hours; longer for wider ranges)...")):
             universe = universe_for(db_path, hours, st.session_state.get("reload_token", 0))
-        coins = select_coins(universe, int((hold + window) * SLOTS_PER_MINUTE), period)
+        spm = slots_per_minute(db_path)
+        coins = select_coins(universe, int((hold + window) * spm), period)
         config = EngineConfig(observe_delay_slots=int(d), land_slots=int(land), intra_slot=intra,
                               priority_fee=int(priority * LAMPORTS_PER_SOL))
         with st.spinner(t("Simulating {n:,} coins...", n=len(coins.coins))):
-            strategy = make_strategy(name, args, size)
+            strategy = make_strategy(name, args, size, spm)
             result = run(coins, strategy, config)
             summary = summarize(result)
             base_result = base_summary = None
             if baseline and name != "random_baseline":
-                base_result = run(coins, make_strategy("random_baseline", args, size), config)
+                base_result = run(coins, make_strategy("random_baseline", args, size, spm), config)
                 base_summary = summarize(base_result)
         record = run_record({"strategy": name, "size": size, "period": period, "hours": hours or None, **vars(args)},
-                            config, strategy, coins, result, summary, base_summary)
+                            config, strategy, coins, result, summary, base_summary, spm=spm)
         if base_result is not None:
             record["baseline_round_trips"] = [round_trip_record(rt) for rt in base_result.round_trips]
         if save:
@@ -124,6 +126,11 @@ def pct(x):
     return "-" if x is None else f"{x:+.1%}"
 
 
+def record_spm(db_path: str, rec: dict) -> float:
+    """Slots per minute the run used; older saved runs did not record it, so measure the data."""
+    return rec.get("slots_per_minute") or slots_per_minute(db_path)
+
+
 def render_record(db_path: str, rec: dict):
     s = rec["summary"]
     args, cfg = rec["args"], rec["engine_config"]
@@ -133,7 +140,7 @@ def render_record(db_path: str, rec: dict):
     st.markdown(t("**{name}** · {size} SOL · take profit +{tp:.0%} / stop loss {sl:.0%} / max {hold:.0f} min · "
                   "d={d} L={land} · {coins:,} coins ({range}, {period})",
                   name=name, size=p["size_sol"], tp=p["take_profit"], sl=p["stop_loss"],
-                  hold=p["max_hold_slots"] / SLOTS_PER_MINUTE, d=cfg["observe_delay_slots"], land=cfg["land_slots"],
+                  hold=p["max_hold_slots"] / record_spm(db_path, rec), d=cfg["observe_delay_slots"], land=cfg["land_slots"],
                   coins=rec["coins"], range=data_range, period=period_label(args.get("period", "all"))))
 
     m = st.columns(4)
@@ -238,7 +245,7 @@ def round_trips_frame(db_path: str, trips: list) -> pd.DataFrame:
     df["close_time"] = slot_to_time(db_path, df.close_slot).values
     df["pnl_sol"] = df.pnl / 1e9
     df["ret"] = df.pnl_pct
-    df["hold_min"] = (df.exit_slot - df.first_fill_slot) / SLOTS_PER_MINUTE
+    df["hold_min"] = (df.exit_slot - df.first_fill_slot) * seconds_per_slot(db_path) / 60
     df["reason_label"] = df.exit_reason.map(reason_label)
     return df
 

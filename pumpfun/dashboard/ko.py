@@ -31,9 +31,9 @@ KO = {
     "Database size": "DB 크기",
     "Last received": "마지막 수신",
     "Sample": "샘플",
-    "You are looking at the bundled sample: one real hour of mainnet data, with only the SOL-paired coins the "
+    "You are looking at the bundled sample: half an hour of real mainnet data, with only the SOL-paired coins the "
     "simulator uses. Collect your own with `pumpfun collect` and open it with `pumpfun dashboard`.":
-        "번들 샘플 데이터를 보고 있어요: 실제 메인넷 1시간 분량이고, 시뮬레이션에 쓰는 SOL 페어 코인만 담겨 있어요. "
+        "번들 샘플 데이터를 보고 있어요: 실제 메인넷 30분 분량이고, 시뮬레이션에 쓰는 SOL 페어 코인만 담겨 있어요. "
         "직접 모으려면 `pumpfun collect`, 모은 데이터를 보려면 `pumpfun dashboard`.",
     "No new trades for more than 2 minutes. Check whether the collector (`pumpfun collect`) has stopped.":
         "2분 넘게 새 거래가 들어오지 않았어요. 수집기(`pumpfun collect`)가 멈췄는지 확인해 보세요.",

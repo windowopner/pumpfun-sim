@@ -13,12 +13,12 @@ from pumpfun.collect.store import connect_readonly
 from pumpfun.dashboard.i18n import t
 from pumpfun.paths import PACKAGE_DIR, default_db
 from pumpfun.sim.market import INITIAL_VIRTUAL_QUOTE_RESERVES, INITIAL_VIRTUAL_TOKEN_RESERVES, ZERO_PUBKEY
+from pumpfun.sim.replay import NOMINAL_SECONDS_PER_SLOT
 
 # The source checkout (docs/, tests/) when running from one; the package itself when installed.
 ROOT = PACKAGE_DIR.parent if (PACKAGE_DIR.parent / "pyproject.toml").exists() else PACKAGE_DIR
 DEFAULT_DB = Path(os.environ.get("PUMPFUN_DB") or default_db())
 LAUNCH_PRICE = INITIAL_VIRTUAL_QUOTE_RESERVES / INITIAL_VIRTUAL_TOKEN_RESERVES   # lamports per token unit
-SECONDS_PER_SLOT = 0.4
 LOCAL_TZ = datetime.now().astimezone().tzinfo
 
 
@@ -41,11 +41,16 @@ def slot_clock(db_path: str):
     return first, last
 
 
+def seconds_per_slot(db_path: str) -> float:
+    """Measured from the first and last coin; slots run well under the nominal 0.4 s."""
+    (s0, t0), (s1, t1) = slot_clock(db_path)
+    return (t1 - t0) / (s1 - s0) if s1 != s0 else NOMINAL_SECONDS_PER_SLOT
+
+
 def slot_to_time(db_path: str, slots) -> pd.Series:
     """Approximate local wall-clock time for slots, by linear interpolation between coins."""
-    (s0, t0), (s1, t1) = slot_clock(db_path)
-    rate = (t1 - t0) / (s1 - s0) if s1 != s0 else SECONDS_PER_SLOT
-    seconds = t0 + (pd.Series(slots, dtype="float64") - s0) * rate
+    (s0, t0), _ = slot_clock(db_path)
+    seconds = t0 + (pd.Series(slots, dtype="float64") - s0) * seconds_per_slot(db_path)
     return unix_to_local(seconds)
 
 

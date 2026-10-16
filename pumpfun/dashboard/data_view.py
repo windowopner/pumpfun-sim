@@ -9,8 +9,8 @@ import pandas as pd
 import streamlit as st
 
 from pumpfun.dashboard.common import (
-    KINDS, LAUNCH_PRICE, ZERO_PUBKEY, ago, coin_kind, connect, duration, kind_label, query, slot_to_time,
-    unix_to_local,
+    KINDS, LAUNCH_PRICE, ZERO_PUBKEY, ago, coin_kind, connect, duration, kind_label, query, seconds_per_slot,
+    slot_to_time, unix_to_local,
 )
 from pumpfun.dashboard.i18n import t
 from pumpfun.sim.market import CurveState
@@ -128,7 +128,7 @@ def render(db_path: str):
     size = h["db_bytes"]
     cols[4].metric(t("Database size"), f"{size / 1e9:.1f} GB" if size >= 1e9 else f"{size / 1e6:.0f} MB")
     if h["is_sample"]:
-        st.info(t("You are looking at the bundled sample: one real hour of mainnet data, with only the SOL-paired "
+        st.info(t("You are looking at the bundled sample: half an hour of real mainnet data, with only the SOL-paired "
                   "coins the simulator uses. Collect your own with `pumpfun collect` and open it with "
                   "`pumpfun dashboard`."))
     elif h["last_received"] and time.time() - h["last_received"] > 120:
@@ -155,7 +155,7 @@ def render_coverage(db_path: str):
             "missed_slots": (cov.first_slot.iloc[1:].values - cov.last_slot.iloc[:-1].values - 1),
         })
         gaps = gaps[gaps["missed_slots"] > 0]
-        gaps["length"] = (gaps["missed_slots"] * 0.4).map(duration)
+        gaps["length"] = (gaps["missed_slots"] * seconds_per_slot(db_path)).map(duration)
         bars = alt.Chart(cov).mark_bar(height=18).encode(
             x=alt.X("start:T", title=None), x2="end:T",
             tooltip=[alt.Tooltip("start:T", title=t("Start"), format="%m-%d %H:%M:%S"),
@@ -261,7 +261,7 @@ def render_coin(db_path: str, mint: str):
     grad = [e for e in events if e["event"] == "CompleteEvent"]
     if grad:
         st.success(t("Graduated (curve complete) {n:.1f} min after creation",
-                     n=(grad[0]["slot"] - coin["slot"]) * 0.4 / 60))
+                     n=(grad[0]["slot"] - coin["slot"]) * seconds_per_slot(db_path) / 60))
 
     base = alt.Chart(df).encode(x=alt.X("minutes:Q", title=t("Minutes after creation")))
     line = base.mark_line(color="#888").encode(

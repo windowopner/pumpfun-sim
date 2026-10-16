@@ -2,7 +2,7 @@
 Market model tests.
 
 The fixture tests use single real transactions. `ReproduceRecordedTrades`
-replays every trade in a collected database: the bundled one-hour sample by
+replays every trade in a collected database: the bundled half-hour sample by
 default, or your own with $PUMP_DB.
 
     python3 -m unittest discover tests

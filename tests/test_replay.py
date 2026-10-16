@@ -16,7 +16,8 @@ from pathlib import Path
 from pumpfun.collect.store import EventStore
 from pumpfun.sim.market import ZERO_PUBKEY, CurveState, FeeRates, buy_exact_quote_in, buy_exact_tokens, sell
 from pumpfun.sim.replay import (
-    COMPLETE, CREATE, MIGRATION, PHANTOM_SIGNATURE, TRADE, load_universe, observations,
+    COMPLETE, CREATE, MIGRATION, NOMINAL_SECONDS_PER_SLOT, PHANTOM_SIGNATURE, TRADE, load_universe, observations,
+    seconds_per_slot,
 )
 from tests.data_source import test_db
 
@@ -225,6 +226,31 @@ class ReplayOnSyntheticData(unittest.TestCase):
 
 
 @unittest.skipUnless(DB_PATH.exists(), f"no collector database at {DB_PATH}")
+class SlotTime(unittest.TestCase):
+    """Minutes become slots with the slot time measured from the data, not a constant."""
+
+    def chain_with_coins(self, slots):
+        self.dir = tempfile.TemporaryDirectory()
+        path = Path(self.dir.name) / "t.db"
+        chain = FakeChain(path)                       # FakeChain stamps each event with timestamp = slot
+        for i, slot in enumerate(slots):
+            chain.create(f"M{i}", slot)
+        chain.close()
+        self.addCleanup(self.dir.cleanup)
+        return path
+
+    def test_measured_from_first_and_last_coin(self):
+        self.assertEqual(seconds_per_slot(self.chain_with_coins([100, 2_600, 5_100])), 1.0)
+
+    def test_too_short_to_measure_falls_back_to_nominal(self):
+        self.assertEqual(seconds_per_slot(self.chain_with_coins([100, 600])), NOMINAL_SECONDS_PER_SLOT)
+
+    def test_real_data(self):
+        measured = seconds_per_slot(DB_PATH)
+        print(f"\n  {measured:.3f} s per slot")
+        self.assertTrue(0.1 < measured < 0.5, measured)
+
+
 class RealDatabase(unittest.TestCase):
     def test_universe_and_observations(self):
         u = load_universe(DB_PATH)

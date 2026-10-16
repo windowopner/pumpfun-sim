@@ -1,6 +1,6 @@
 """
 The database the data-driven tests replay: $PUMP_DB when set (e.g. your own
-collector database, data/pump.db), otherwise the bundled one-hour sample, so the
+collector database, data/pump.db), otherwise the bundled half-hour sample, so the
 suite gives the same result on any checkout.
 """
 

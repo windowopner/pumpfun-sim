@@ -1,6 +1,6 @@
 """
-The sample dataset: one hour of collected data, cut to the coins the simulator
-can use (SOL-paired, not mayhem, created inside the hour) and their trades, so
+The sample dataset: half an hour of collected data (9,000 slots), cut to the coins
+the simulator can use (SOL-paired, not mayhem, created inside the window) and their trades, so
 the demo, the dashboard and the data tests work without running the collector.
 
     pumpfun sample --from data/pump.db              # maintainers: rebuild the packed sample
@@ -15,9 +15,7 @@ from typing import Optional
 from pumpfun.collect.store import EventStore, connect_readonly
 from pumpfun.paths import PACKED_SAMPLE, sample_db
 from pumpfun.sim.market import ZERO_PUBKEY
-from pumpfun.sim.replay import PHANTOM_SIGNATURE, ROWID_SLOT_MARGIN, first_trade_rowid
-
-SLOTS_PER_HOUR = 9_000
+from pumpfun.sim.replay import PHANTOM_SIGNATURE, ROWID_SLOT_MARGIN, first_trade_rowid, slots_per_minute
 
 
 def ensure_sample(dest: Optional[Path] = None) -> Path:
@@ -32,12 +30,12 @@ def ensure_sample(dest: Optional[Path] = None) -> Path:
     return dest
 
 
-def build_sample(source: Path, out: Path, end_slot: int, hours: float = 1.0) -> dict:
+def build_sample(source: Path, out: Path, end_slot: int, hours: float = 0.5) -> dict:
     """
-    Copy `hours` of data ending at `end_slot` from a collector database. `end_slot`
-    and the hour before it must sit inside one covered range (no collector gap).
+    Copy `hours` of data ending at `end_slot` from a collector database. The whole
+    window must sit inside one covered range (no collector gap).
     """
-    start = end_slot - int(hours * SLOTS_PER_HOUR)
+    start = end_slot - int(hours * 60 * slots_per_minute(source))
     src = connect_readonly(source)
     covered = src.execute("SELECT 1 FROM connections WHERE first_slot <= ? AND last_slot >= ?",
                           (start, end_slot)).fetchone()

@@ -1,7 +1,7 @@
 """
 pumpfun: collect Pump.fun on-chain events and paper-trade strategies on them.
 
-    pumpfun demo                     # open the dashboard on the bundled one-hour sample
+    pumpfun demo                     # open the dashboard on the bundled half-hour sample
     pumpfun collect                  # record live events into data/pump.db (Ctrl-C to stop)
     pumpfun sim --baseline           # run a strategy over the collected data
     pumpfun dashboard                # the dashboard on your own data
@@ -94,7 +94,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--lang", choices=["en", "ko"], help="dashboard language (default: English; also $PUMPFUN_LANG)")
     p.set_defaults(func=cmd_dashboard)
 
-    p = sub.add_parser("demo", help="open the dashboard on the bundled one-hour sample")
+    p = sub.add_parser("demo", help="open the dashboard on the bundled half-hour sample")
     p.add_argument("--port", type=int, default=8501)
     p.add_argument("--no-browser", action="store_true", help="do not open a browser window")
     p.add_argument("--lang", choices=["en", "ko"], help="dashboard language (default: English; also $PUMPFUN_LANG)")
@@ -103,7 +103,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("sample", help="rebuild the bundled sample from a collector database (maintainers)")
     p.add_argument("--from", dest="source", required=True, help="collector database to cut the sample from")
     p.add_argument("--end-slot", type=int, required=True, help="last slot of the sample window")
-    p.add_argument("--hours", type=float, default=1.0)
+    p.add_argument("--hours", type=float, default=0.5)
     p.add_argument("--out", default="data/sample.db", help="unpacked sample to write")
     p.add_argument("--packed", default=str(PACKED_SAMPLE), help="gzip file shipped in the package")
     p.set_defaults(func=cmd_sample)
